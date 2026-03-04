@@ -1,0 +1,431 @@
+/*
+ * SADHANAM — Table Tennis Tournament Manager
+ * Theme: ICICI Orange (#F06321) palette · Calibri font · Black text
+ * #F06321 → hsl(19, 87%, 53%)
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* ── Light / Orange theme (default) ── */
+  :root {
+    /* Backgrounds — warm orange tints */
+    --background:        25 60% 96%;       /* #FBF0EA warm off-white */
+    --foreground:        0 0% 8%;          /* #141414 near-black text */
+    --card:              0 0% 100%;        /* pure white cards */
+    --card-foreground:   0 0% 8%;
+    --popover:           0 0% 100%;
+    --popover-foreground: 0 0% 8%;
+
+    /* Primary = ICICI orange */
+    --primary:           19 87% 53%;       /* #F06321 */
+    --primary-foreground: 0 0% 100%;       /* white on orange */
+
+    /* Secondary / surfaces */
+    --secondary:         25 50% 90%;       /* light peach */
+    --secondary-foreground: 19 60% 20%;    /* dark brown */
+    --muted:             25 35% 91%;       /* warm light grey */
+    --muted-foreground:  20 25% 22%;       /* #3A2E28 — dark enough on any light bg (7:1+ on white) */
+
+    /* Accent = orange (same as primary for consistency) */
+    --accent:            19 87% 53%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive:       0 72% 45%;
+    --destructive-foreground: 0 0% 98%;
+
+    /* Borders */
+    --border:            25 30% 82%;       /* warm light border */
+    --input:             25 30% 86%;
+    --ring:              19 87% 53%;
+    --radius:            0.5rem;
+
+    /* Match card backgrounds */
+    --match-pending-bg:  0 0% 100%;        /* white — upcoming */
+    --match-complete-bg: 0 0% 84%;         /* clear medium grey — completed */
+    --match-live-border: 19 87% 53%;       /* orange border for live */
+
+    /* Orange palette tokens for direct use */
+    --orange-main:       #F06321;
+    --orange-dark:       #C94E18;          /* 20% darker for hover */
+    --orange-light:      #F5853F;          /* 10% lighter */
+    --orange-pale:       #FDE8DA;          /* very light tint */
+    --orange-muted:      #FAD4BB;          /* subtle tint */
+  }
+
+  /* ── Dark / Night theme ── */
+  html.dark {
+    --background:        20 30% 7%;        /* very dark warm brown #150F0B */
+    --foreground:        25 10% 92%;       /* near white */
+    /*
+     * Card is intentionally 10pp lighter than background so cards
+     * are perceptible without borders alone. contrast ≈ 1.35:1 which
+     * is subtle but correct — dark-mode separation relies on border +
+     * shadow, not just background delta.
+     */
+    --card:              20 20% 17%;       /* #32261F — visible step up */
+    --card-foreground:   25 10% 92%;
+    --popover:           20 20% 15%;
+    --popover-foreground: 25 10% 92%;
+    --primary:           19 87% 53%;       /* same orange */
+    --primary-foreground: 0 0% 100%;
+    --secondary:         20 18% 22%;
+    --secondary-foreground: 25 10% 80%;
+    --muted:             20 18% 22%;       /* slightly above card */
+    /*
+     * muted-foreground at 60% lightness → contrast 6.4:1 vs bg,
+     * 5.1:1 vs card. Both pass WCAG AA for body text.
+     */
+    --muted-foreground:  20 10% 60%;
+    --accent:            19 87% 53%;
+    --accent-foreground: 0 0% 100%;
+    --destructive:       0 65% 55%;
+    --destructive-foreground: 0 0% 98%;
+    /*
+     * Border at 26% lightness — visible as a line on both bg and card.
+     */
+    --border:            20 16% 26%;
+    --input:             20 16% 26%;
+    --ring:              19 87% 60%;       /* slightly brighter ring in dark */
+    --match-pending-bg:  20 20% 17%;       /* same as card */
+    --match-complete-bg: 20 10% 22%;       /* slightly lighter, desaturated */
+  }
+}
+
+@layer base {
+  * { @apply border-border; box-sizing: border-box; }
+
+  body {
+    @apply bg-background text-foreground;
+    /* Calibri stack — Windows system font, falls back gracefully */
+    font-family: 'Calibri', 'Calibri Regular', 'Trebuchet MS', 'Gill Sans', Arial, sans-serif;
+    font-size: 17px;     /* was 15px — increased by 2pt as requested */
+    line-height: 1.55;
+    /* color set by CSS var via text-foreground — do NOT override with #hex */
+    min-height: 100vh;
+    transition: background-color 0.25s, color 0.25s;
+  }
+
+  /* Light mode body — warm orange gradient background */
+  html:not(.dark) body {
+    /* ICICI orange-first background */
+    background:
+      radial-gradient(ellipse 80% 60% at 20% 10%, rgba(255,255,255,0.26) 0%, transparent 55%),
+      radial-gradient(ellipse 70% 55% at 80% 0%, rgba(0,74,127,0.12) 0%, transparent 50%),
+      linear-gradient(135deg, #F06321 0%, #F5853F 55%, #F99D27 100%);
+    background-attachment: fixed;
+  }
+
+  /* Dark mode body */
+  html.dark body {
+    color: hsl(25, 10%, 92%);
+    background:
+      radial-gradient(ellipse 80% 50% at 50% -10%,
+        rgba(240,99,33,0.12) 0%, transparent 60%),
+      hsl(20, 30%, 8%);
+    background-attachment: fixed;
+  }
+
+  /* All headings: Calibri Bold */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Calibri', 'Trebuchet MS', Arial, sans-serif;
+    font-weight: 700;
+    color: inherit;
+    letter-spacing: 0.01em;
+  }
+
+  /* Inputs use black text in light mode */
+  html:not(.dark) input,
+  html:not(.dark) textarea,
+  html:not(.dark) select {
+    color: #111111;
+  }
+}
+
+@layer components {
+  /* ── Match cards ── */
+  .match-card {
+    @apply transition-all duration-200 border border-border rounded-lg overflow-hidden;
+    background-color: hsl(var(--match-pending-bg));
+  }
+
+  /* Completed = clearly grey */
+  .match-card.complete {
+    background-color: hsl(var(--match-complete-bg));
+    @apply border-border/50;
+  }
+
+  html:not(.dark) .match-card.complete {
+    background-color: #D4D4D4;  /* solid medium grey, unmistakably different */
+    border-color: #BBBBBB;
+  }
+
+  .match-card:hover {
+    border-color: #F06321;
+    box-shadow: 0 0 0 1px rgba(240,99,33,0.25);
+  }
+
+  .match-card.live {
+    border-color: #F06321;
+    box-shadow: 0 0 14px rgba(240,99,33,0.20);
+  }
+
+  /* ── Live pulse dot — orange themed ── */
+  .live-dot {
+    @apply w-2 h-2 rounded-full;
+    background-color: #F06321;
+    box-shadow: 0 0 0 0 rgba(240, 99, 33, 0.7);
+    animation: live-pulse 2s ease-out infinite;
+  }
+
+  @keyframes live-pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(240, 99, 33, 0.7); }
+    70%  { box-shadow: 0 0 0 8px rgba(240, 99, 33, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(240, 99, 33, 0); }
+  }
+
+  /* ── Seed badge ── */
+  .seed-badge {
+    @apply text-xs font-bold rounded px-1.5 py-0.5 font-mono tabular-nums;
+    background: rgba(240,99,33,0.12);
+    border: 1px solid rgba(240,99,33,0.35);
+    color: #C94E18;
+  }
+  html.dark .seed-badge {
+    color: #F5853F;
+    background: rgba(240,99,33,0.15);
+    border-color: rgba(240,99,33,0.35);
+  }
+
+  /* ── Game score chips ── */
+  .game-score-chip {
+    @apply text-xs font-mono font-semibold px-1.5 py-0.5 rounded tabular-nums;
+  }
+
+  /* ── Bracket line ── */
+  .bracket-line {
+    position: absolute;
+    background: hsl(var(--border));
+  }
+
+  /* ── Animations ── */
+  @keyframes animate-pulse-slow {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+  .animate-pulse-slow {
+    animation: animate-pulse-slow 2s ease-in-out infinite;
+  }
+
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .animate-fade-in { animation: fade-in 0.2s ease-out; }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: hsl(var(--background)); }
+  ::-webkit-scrollbar-thumb { background: rgba(240,99,33,0.3); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(240,99,33,0.55); }
+
+  /* ── scrollbar-hide utility (Tailwind 3 does not include this by default) ── */
+  .scrollbar-hide {
+    -ms-overflow-style: none;   /* IE, Edge */
+    scrollbar-width: none;      /* Firefox */
+  }
+  .scrollbar-hide::-webkit-scrollbar { display: none; } /* Chrome, Safari, Opera */
+
+  /* ── scrollbar-none (same as scrollbar-hide, alias) ── */
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar { display: none; }
+
+  /* ── Mobile touch optimizations ────────────────────────────────────────────
+   * - Remove blue highlight on tapped elements (iOS/Android)
+   * - Ensure interactive elements have 44px min touch target
+   * ─────────────────────────────────────────────────────────────────────── */
+  button, a, [role="button"] {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* ── Surface utilities ─────────────────────────────────────────────────────
+   * Use these instead of bg-white/85 backdrop-blur border-white/60 so that
+   * the glass effect works in light and an opaque card appears in dark.
+   * .surface-card  — main content panel (cards, detail views)
+   * .surface-panel — page-level panel (slightly more elevated in light)
+   * ─────────────────────────────────────────────────────────────────────── */
+  .surface-card {
+    @apply bg-card border border-border rounded-2xl;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  }
+  html:not(.dark) .surface-card {
+    background: rgba(255,255,255,0.88);
+    backdrop-filter: blur(12px);
+    border-color: rgba(255,255,255,0.65);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+  }
+  html.dark .surface-card {
+    background: hsl(var(--card));
+    border-color: hsl(var(--border));
+    box-shadow:
+      0 1px 0 0 rgba(255,255,255,0.04) inset,
+      0 2px 20px rgba(0,0,0,0.50),
+      0 0 0 1px hsl(var(--border));
+  }
+
+  .surface-panel {
+    @apply surface-card;
+  }
+  html:not(.dark) .surface-panel {
+    background: rgba(255,255,255,0.82);
+    backdrop-filter: blur(16px);
+  }
+
+  /* ── surface-elevated — for modals, dropdowns (one step above surface-card) */
+  .surface-elevated {
+    @apply bg-card border border-border rounded-2xl;
+  }
+  html:not(.dark) .surface-elevated {
+    background: rgba(255,255,255,0.97);
+    box-shadow: 0 8px 40px rgba(0,0,0,0.14);
+  }
+  html.dark .surface-elevated {
+    background: hsl(20 22% 20%);
+    border-color: hsl(var(--border));
+    box-shadow:
+      0 1px 0 0 rgba(255,255,255,0.06) inset,
+      0 4px 32px rgba(0,0,0,0.55),
+      0 0 0 1px hsl(var(--border));
+  }
+
+  /* ── Form field utility ─────────────────────────────────────────────────────
+   * Use instead of bg-white border-gray-200 text-gray-900.
+   * In light: white with warm border. In dark: card surface with visible border.
+   * ─────────────────────────────────────────────────────────────────────── */
+  .field-base {
+    @apply flex w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm text-foreground;
+    @apply focus:outline-none focus:ring-2 focus:ring-ring/60 focus:border-ring/60;
+    @apply placeholder:text-muted-foreground/60;
+  }
+  html:not(.dark) .field-base {
+    background: rgba(255,255,255,0.95);
+    border-color: rgba(0,0,0,0.15);
+  }
+  html.dark .field-base {
+    background: hsl(var(--card));
+    border-color: hsl(var(--border));
+    color: hsl(var(--foreground));
+  }
+
+  /* ── Inline option card — format/type selector buttons ─────────────────────
+   * E.g. BO3 / BO5 / BO7 toggle buttons, event type cards, etc.
+   * ─────────────────────────────────────────────────────────────────────── */
+  .option-card {
+    @apply rounded-xl border-2 border-border bg-card text-foreground transition-all duration-150;
+    @apply hover:border-primary/60 hover:bg-muted/30;
+    @apply cursor-pointer touch-manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .option-card.selected {
+    border-color: #F06321;
+    @apply bg-orange-50 dark:bg-orange-950/30 text-foreground;
+    box-shadow: 0 0 0 1px rgba(240,99,33,0.25);
+  }
+
+  /* ── Draw card (Full Bracket view) — CSS-var driven for dark mode ── */
+  .draw-card-pending  { background: hsl(var(--card)); border-color: hsl(var(--border)); }
+  .draw-card-live     { background: hsl(var(--card)); border-color: #F06321;
+                        box-shadow: 0 0 10px rgba(240,99,33,0.20); }
+  .draw-card-complete { background: hsl(var(--match-complete-bg)); border-color: hsl(var(--border)); }
+
+  html:not(.dark) .draw-card-pending  { background: #FFFFFF; border-color: #DDD5CC; }
+  html:not(.dark) .draw-card-live     { background: #FFF5F0; border-color: #F06321; }
+  html:not(.dark) .draw-card-complete { background: #D4D4D4; border-color: #BBBBBB; }
+
+  /* ── Bracket connector lines ── */
+  .bracket-connector { background: hsl(var(--border)); opacity: 0.7; }
+  html:not(.dark) .bracket-connector { background: #D4834A; opacity: 0.55; }
+
+  /* ── Dark-mode card shadow override for Card component ── */
+  html.dark .shadow-card {
+    box-shadow: 0 2px 16px rgba(0,0,0,0.40), 0 0 0 1px hsl(var(--border));
+  }
+
+  /* ── stat-tile — used in admin status grids ──────────────────────────────
+   * Replaces bg-white/80 + border-white/40 patterns in status tiles.
+   * ─────────────────────────────────────────────────────────────────────── */
+  .stat-tile {
+    @apply rounded-xl border border-border bg-card p-4;
+  }
+  html:not(.dark) .stat-tile {
+    background: rgba(255,255,255,0.75);
+    border-color: rgba(255,255,255,0.55);
+    backdrop-filter: blur(8px);
+  }
+  html.dark .stat-tile {
+    background: hsl(var(--card));
+    border-color: hsl(var(--border));
+  }
+
+  /* ── info-banner — muted info strip (replaces bg-muted/30 border-border patterns) */
+  .info-banner {
+    @apply flex items-center gap-2.5 rounded-xl border border-border/60 bg-muted/20 px-4 py-3 text-sm text-foreground;
+  }
+  html.dark .info-banner {
+    background: hsl(var(--muted) / 0.4);
+    border-color: hsl(var(--border));
+  }
+  /* ── Live stripe — animated gradient for live match cards ── */
+  @keyframes live-stripe {
+    0%   { background-position: 0%   0%; }
+    100% { background-position: 200% 0%; }
+  }
+
+  /* ── Score tick — subtle scale pulse when a score changes ── */
+  @keyframes score-tick {
+    0%   { transform: scale(1); }
+    30%  { transform: scale(1.12); color: #F06321; }
+    60%  { transform: scale(1); }
+    100% { transform: scale(1); }
+  }
+  .score-tick {
+    display: inline-block;
+  }
+  .score-tick.updated {
+    animation: score-tick 0.55s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  /* ── Card hover elevation ── */
+  .card-lift {
+    @apply transition-all duration-200;
+  }
+  .card-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(240, 99, 33, 0.10), 0 2px 8px rgba(0,0,0,0.07);
+  }
+  html.dark .card-lift:hover {
+    box-shadow: 0 8px 24px rgba(240, 99, 33, 0.14), 0 2px 8px rgba(0,0,0,0.30);
+  }
+
+  /* ── Section rule ── */
+  .section-rule {
+    @apply h-px w-full bg-border/50;
+  }
+
+  /* ── Staggered fade-in for homepage sections ── */
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .fade-up          { animation: fade-up 0.3s ease-out both; }
+  .fade-up-delay-1  { animation: fade-up 0.3s 0.06s ease-out both; }
+  .fade-up-delay-2  { animation: fade-up 0.3s 0.12s ease-out both; }
+  .fade-up-delay-3  { animation: fade-up 0.3s 0.18s ease-out both; }
+  .fade-up-delay-4  { animation: fade-up 0.3s 0.24s ease-out both; }
+
+}
