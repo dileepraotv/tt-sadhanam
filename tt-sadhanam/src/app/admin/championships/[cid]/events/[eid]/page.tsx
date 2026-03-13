@@ -15,6 +15,7 @@ import { SingleRRStage }      from '@/components/admin/stages/SingleRRStage'
 import { PureRRStage }        from '@/components/admin/stages/PureRRStage'
 import { DoubleEliminationStage } from '@/components/admin/stages/DoubleEliminationStage'
 import { TeamLeagueStage }    from '@/components/admin/stages/TeamLeagueStage'
+import { TeamGroupKOStage }   from '@/components/admin/stages/TeamGroupKOStage'
 import { LiveBadge }          from '@/components/shared/LiveBadge'
 import { EventHeaderActions } from './EventHeaderActions'
 import type { Tournament, Player, Match, Stage, RRStageConfig } from '@/lib/types'
@@ -78,6 +79,20 @@ function FormatTypeBadge({ formatType }: { formatType: string | undefined }) {
     return (
       <span className="flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-800/60">
         <Swords className="h-3 w-3" /> Teams - Knockout (Swaythling)
+      </span>
+    )
+  }
+  if (formatType === 'team_group_corbillon') {
+    return (
+      <span className="flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/60">
+        <Layers className="h-3 w-3" /> Teams - Groups + KO (Corbillon)
+      </span>
+    )
+  }
+  if (formatType === 'team_group_swaythling') {
+    return (
+      <span className="flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-pink-100 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300 border border-pink-200 dark:border-pink-800/60">
+        <Layers className="h-3 w-3" /> Teams - Groups + KO (Swaythling)
       </span>
     )
   }
@@ -202,6 +217,9 @@ export default async function AdminEventPage({ params, searchParams }: PageProps
   const isTeamLeague   = tournament.format_type === 'team_league'
   const isTeamLeagueKO = tournament.format_type === 'team_league_ko'
   const isTeamSwaythling = tournament.format_type === 'team_league_swaythling'
+  const isTeamGroupCorbillon  = tournament.format_type === 'team_group_corbillon'
+  const isTeamGroupSwaythling = tournament.format_type === 'team_group_swaythling'
+  const isTeamGroupKO  = isTeamGroupCorbillon || isTeamGroupSwaythling
   const isAnyTeamLeague = isTeamLeague || isTeamLeagueKO || isTeamSwaythling
   const liveCount      = matches.filter(m => m.status === 'live').length
   const rrMatches      = matches.filter(m => m.match_kind === 'round_robin')
@@ -216,6 +234,7 @@ export default async function AdminEventPage({ params, searchParams }: PageProps
     isSingleRR     ? ['players','groups'] :
     isTeamLeague   ? ['teams','schedule','knockout'] :
     (isTeamLeagueKO || isTeamSwaythling) ? ['teams','bracket'] :
+    isTeamGroupKO  ? ['teams','groups','knockout'] :
     ['players','stages']
   // When active/bracket generated, default to the action tab; for setup, show players/teams
   const defaultTabKey = (() => {
@@ -224,6 +243,9 @@ export default async function AdminEventPage({ params, searchParams }: PageProps
     }
     if (isTeamLeague) {
       return tournament.bracket_generated ? 'schedule' : 'teams'
+    }
+    if (isTeamGroupKO) {
+      return tournament.bracket_generated ? 'knockout' : 'teams'
     }
     if (isMultiStage) {
       return tournament.stage2_bracket_generated ? 'stage2' : (tournament.status === 'active' ? 'stage1' : 'players')
@@ -291,7 +313,7 @@ export default async function AdminEventPage({ params, searchParams }: PageProps
             </div>
             {/* Actions row — always visible on mobile */}
             <div className="flex items-center gap-2 flex-wrap">
-            {!isMultiStage && !isSingleRR && !isDE && !isAnyTeamLeague && (
+            {!isMultiStage && !isSingleRR && !isDE && !isAnyTeamLeague && !isTeamGroupKO && (
                 <GenerateDrawButton tournament={tournament} players={players} />
               )}
               <EventHeaderActions
@@ -471,6 +493,10 @@ export default async function AdminEventPage({ params, searchParams }: PageProps
                   />
                 </TabsContent>
               </>
+            ) : isTeamGroupKO ? (
+              <TabsContent value="teams">
+                <TeamGroupKOStage tournament={tournament} matchBase={matchBase} />
+              </TabsContent>
             ) : (
               /* Default: single_knockout */
               <>
