@@ -1,0 +1,551 @@
+'use client'
+
+import { useLoading } from '@/components/shared/GlobalLoader'
+import { useState, useTransition } from 'react'
+import { useRouter, usePathname, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
+import { NextStepBanner } from '@/components/admin/stages/NextStepBanner'
+import { Plus, Trash2, Users, ClipboardList, Award, Check, Pencil, X, FileSpreadsheet, AlertTriangle } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import type { Player, Tournament } from '@/lib/types'
+import { Button } from '@/components/ui/button'
+import { Input, Label, Textarea, Badge, Card, CardContent, CardHeader, CardTitle } from '@/components/ui/index'
+import { addPlayer, bulkAddPlayers, deletePlayer, deleteAllPlayers, updatePlayerSeed, updatePlayer } from '@/lib/actions/players'
+import { toast } from '@/components/ui/toaster'
+import { ExcelUpload } from '@/components/admin/ExcelUpload'
+
+interface PlayerManagerProps {
+  tournament: Tournament
+  players:    Player[]
+}
+
+export function PlayerManager({ tournament, players }: PlayerManagerProps) {
+  const [mode, setMode]         = useState<'single' | 'bulk' | 'excel'>('single')
+  const [name, setName]         = useState('')
+  const [club, setClub]         = useState('')
+  const [seed, setSeed]         = useState<string>('')
+  const [group, setGroup]       = useState<string>('')
+  const [bulkText, setBulkText] = useState('')
+  const [nameError, setNameError] = useState('')
+  const [showDeleteAll, setShowDeleteAll] = useState(false)
+  const [isPending, startTransition] = useTransition()
+  const { setLoading } = useLoading()
+  const router       = useRouter()
+  const pathname     = usePathname()
+  const searchParams = useSearchParams()
+
+  // Derive the correct tab value for this route + format combination
+  const stagesTabValue = (() => {
+    if (pathname.includes('/championships/')) {
+      // Championship event route — tab IDs differ by format
+      if (tournament.format_type === 'multi_rr_to_knockout') return 'stage1'
+      if (tournament.format_type === 'single_round_robin')   return 'groups'
+      // pure_round_robin, double_elimination, single_knockout all use 'stages'
+      return 'stages'
+    }
+    // Standalone tournament route always uses 'stages'
+    return 'stages'
+  })()
+
+  // Navigate to Groups/Stage tab — replace so back button skips tab history
+  const goToStages = () => {
+    const p = new URLSearchParams(searchParams.toString())
+    p.set('tab', stagesTabValue)
+    router.replace(`${pathname}?${p.toString()}`)
+  }
+
+  // Human-readable label for the stage tab this format uses
+  const stageLabel = (() => {
+    if (tournament.format_type === 'multi_rr_to_knockout') return 'Stage 1: Groups'
+    if (tournament.format_type === 'single_round_robin')   return 'Groups'
+    if (tournament.format_type === 'pure_round_robin')     return 'League'
+    if (tournament.format_type === 'double_elimination')   return 'Bracket'
+    return 'Bracket'
+  })()
+
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editName,  setEditName]  = useState('')
+  const [editClub,  setEditClub]  = useState('')
+
+  const isLocked = tournament.bracket_generated
+
+  // Add single ────────────────────────────────────────────────────────────────
+  const handleAddSingle = () => {
+    const trimmed = name.trim()
+    if (!trimmed) { setNameError('Player name cannot be empty'); return }
+    if (trimmed.length < 2) { setNameError('Name must be at least 2 characters'); return }
+    setNameError('')
+    const fd = new FormData()
+    fd.set('name', trimmed)
+    fd.set('club', club.trim())
+    if (seed) fd.set('seed', seed)
+    setLoading(true)
+    startTransition(async () => {
+      const result = await addPlayer(tournament.id, fd)
+      setLoading(false)
+      if (result.error) {
+        toast({ title: 'Could not add player', description: result.error, variant: 'destructive' })
+      } else {
+        setName(''); setClub(''); setSeed(''); setGroup(''); setNameError('')
+        toast({ title: 'Player added', description: trimmed })
+      }
+    })
+  }
+
+  // Bulk add ──────────────────────────────────────────────────────────────────
+  const handleBulkAdd = () => {
+    if (!bulkText.trim()) return
+    setLoading(true)
+    startTransition(async () => {
+      const result = await bulkAddPlayers(tournament.id, bulkText)
+      setLoading(false)
+      if (result.error) {
+        toast({ title: 'Error', description: result.error, variant: 'destructive' })
+      } else {
+        setBulkText('')
+        toast({ title: `${result.count} player${result.count !== 1 ? 's' : ''} added` })
+      }
+    })
+  }
+
+  // Delete ────────────────────────────────────────────────────────────────────
+  const handleDelete = (p: Player) => {
+    setLoading(true)
+    startTransition(async () => {
+      const result = await deletePlayer(tournament.id, p.id)
+      setLoading(false)
+      if (result.error) {
+        toast({ title: 'Delete failed', description: result.error, variant: 'destructive' })
+      } else {
+        toast({ title: 'Player removed', description: p.name })
+      }
+    })
+  }
+
+  // Seed change (no upper limit) ──────────────────────────────────────────────
+  const handleSeedChange = (playerId: string, rawValue: string) => {
+    const trimmed = rawValue.trim()
+    const s = !trimmed ? null : parseInt(trimmed, 10)
+    if (s !== null && (!Number.isInteger(s) || s < 1)) return   // ignore invalid
+    setLoading(true)
+    startTransition(async () => {
+      const result = await updatePlayerSeed(tournament.id, playerId, s)
+      setLoading(false)
+      if (result.error) toast({ title: 'Seed error', description: result.error, variant: 'destructive' })
+    })
+  }
+
+  const startEdit = (p: Player) => { setEditingId(p.id); setEditName(p.name); setEditClub(p.club ?? '') }
+  const cancelEdit = () => { setEditingId(null); setEditName(''); setEditClub('') }
+
+  const saveEdit = (playerId: string) => {
+    if (!editName.trim()) return
+    setLoading(true)
+    startTransition(async () => {
+      const result = await updatePlayer(tournament.id, playerId, {
+        name: editName.trim(),
+        club: editClub.trim() || null,
+      })
+      setLoading(false)
+      if (result.error) {
+        toast({ title: 'Update error', description: result.error, variant: 'destructive' })
+      } else {
+        setEditingId(null)
+        toast({ title: 'Player updated' })
+      }
+    })
+  }
+
+  // Delete all players
+  const handleDeleteAll = () => {
+    setShowDeleteAll(false)
+    setLoading(true)
+    startTransition(async () => {
+      const result = await deleteAllPlayers(tournament.id)
+      setLoading(false)
+      if (result.error) {
+        toast({ title: 'Could not delete players', description: result.error, variant: 'destructive' })
+      } else {
+        toast({ title: `Cleared ${result.count} player${result.count !== 1 ? 's' : ''}` })
+      }
+    })
+  }
+
+  const sorted = players.slice().sort((a, b) => {
+    if (a.seed && b.seed) return a.seed - b.seed
+    if (a.seed) return -1
+    if (b.seed) return 1
+    return a.name.localeCompare(b.name)
+  })
+
+  return (
+    <div className="flex flex-col gap-4">
+
+      {/* Stats row */}
+      <div className="grid grid-cols-3 gap-3">
+        <StatCard label="Players" value={players.length} icon={<Users className="h-4 w-4" />} />
+        <StatCard label="Seeded"  value={players.filter(p => p.seed).length} icon={<Award className="h-4 w-4 text-amber-400" />} />
+        <StatCard label="Groups" value={tournament.bracket_generated ? 'Ready' : 'Pending'} icon={<ClipboardList className="h-4 w-4 text-orange-600" />} />
+      </div>
+
+      {/* ── Next-step guidance banners — consistent across all formats ── */}
+      {!tournament.bracket_generated && players.length === 0 && (
+        <NextStepBanner
+          variant="info"
+          step="Step 1"
+          title="Add players below to get started"
+          description="One by one, paste a list, or upload an Excel file. You need at least 2 players to generate the draw."
+        />
+      )}
+
+      {!tournament.bracket_generated && players.length === 1 && (
+        <NextStepBanner
+          variant="warning"
+          step="Step 1"
+          title="1 player added — add at least one more"
+          description="You need at least 2 players to generate the draw."
+        />
+      )}
+
+      {!tournament.bracket_generated && players.length >= 2 && (
+        <NextStepBanner
+          variant="action"
+          step="Step 2"
+          title={`${players.length} players ready — tap here to go to ${stageLabel}`}
+          description={`Opens the ${stageLabel} tab where you configure and generate the draw.`}
+          href={`${pathname}?tab=${stagesTabValue}`}
+        />
+      )}
+
+      {tournament.bracket_generated && (
+        <NextStepBanner
+          variant="success"
+          title={`Draw generated — go to ${stageLabel} to manage matches`}
+          href={`${pathname}?tab=${stagesTabValue}`}
+        />
+      )}
+
+      {/* Add players card */}
+      {!isLocked && (
+        <Card>
+          <CardHeader><CardTitle>Add Players</CardTitle></CardHeader>
+          <CardContent className="flex flex-col gap-4">
+
+            {/* Mode tabs */}
+            <div className="flex rounded-md overflow-hidden border border-border w-fit">
+              {(['single', 'bulk', 'excel'] as const).map(m => (
+                <button key={m} onClick={() => setMode(m)}
+                  className={cn(
+                    'px-3 py-1.5 text-sm font-medium transition-colors flex items-center gap-1',
+                    mode === m ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground',
+                  )}>
+                  {m === 'excel' && <FileSpreadsheet className="h-3.5 w-3.5" />}
+                  {m === 'single' ? 'One by one' : m === 'bulk' ? 'Paste list' : 'Excel / CSV'}
+                </button>
+              ))}
+            </div>
+
+            {/* One by one */}
+            {mode === 'single' && (
+              <div className="flex flex-col gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="pname">Player name *</Label>
+                    <Input id="pname" placeholder="e.g. Alice Tran"
+                      value={name}
+                      onChange={e => { setName(e.target.value); setNameError('') }}
+                      onKeyDown={e => e.key === 'Enter' && handleAddSingle()}
+                      className={nameError ? 'border-red-400 focus-visible:ring-red-400' : ''}
+                    />
+                    {nameError && <p className="text-xs text-red-500">{nameError}</p>}
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="pclub">Club (optional)</Label>
+                    <Input id="pclub" placeholder="e.g. City TTC" value={club}
+                      onChange={e => setClub(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleAddSingle()}
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <div className="flex flex-col gap-1.5 w-28">
+                    <Label>Seed (optional)</Label>
+                    <Input
+                      type="number" min={1} placeholder="e.g. 1"
+                      value={seed} onChange={e => setSeed(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleAddSingle()}
+                      className="h-9"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5 w-28">
+                    <Label>Group (optional)</Label>
+                    <Input
+                      type="number" min={1} placeholder="e.g. 1"
+                      value={group} onChange={e => setGroup(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleAddSingle()}
+                      className="h-9"
+                    />
+                  </div>
+                </div>
+                <Button onClick={handleAddSingle} disabled={isPending || !name.trim()} variant="cyan" size="sm" className="w-fit">
+                  {isPending ? <span className="tt-spinner tt-spinner-sm" /> : <Plus className="h-4 w-4" />}
+                  {isPending ? 'Adding…' : 'Add Player'}
+                </Button>
+              </div>
+            )}
+
+            {/* Paste list */}
+            {mode === 'bulk' && (
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <Label>
+                    One player per line · Format:{' '}
+                    <code className="font-mono text-orange-600 text-xs bg-muted/60 px-1 rounded">Name | Club | Seed | Group</code>
+                    <span className="ml-2 text-muted-foreground text-xs">(only name required)</span>
+                  </Label>
+                  <Textarea
+                    placeholder={'Alice Tran|City TTC|1|1\nBruno Melo|Westside TTC|2|2\nChen Wei||3|1\nDiana Park\nEvan Ng|North Club||4'}
+                    value={bulkText}
+                    onChange={e => setBulkText(e.target.value)}
+                    rows={8} className="font-mono text-sm"
+                  />
+                  {bulkText.trim() && (
+                    <p className="text-xs text-muted-foreground">
+                      {bulkText.split('\n').filter(l => l.trim()).length} players to add
+                    </p>
+                  )}
+                </div>
+                <Button onClick={handleBulkAdd} disabled={isPending || !bulkText.trim()} variant="cyan" size="sm" className="w-fit">
+                  {isPending ? <span className="tt-spinner tt-spinner-sm" /> : <Plus className="h-4 w-4" />}
+                  {isPending ? 'Adding…' : 'Add All Players'}
+                </Button>
+              </div>
+            )}
+
+            {/* Excel / CSV */}
+            {mode === 'excel' && (
+              <ExcelUpload
+                tournamentId={tournament.id}
+                existingPlayers={players}
+                onComplete={() => setMode('single')}
+              />
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Player list */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between gap-2">
+            <span>Player List</span>
+            <div className="flex items-center gap-2">
+              <Badge variant={players.length > 0 ? 'success' : 'secondary'}>{players.length} players</Badge>
+              {players.length > 0 && !isLocked && (
+                <button
+                  onClick={() => setShowDeleteAll(true)}
+                  disabled={isPending}
+                  className="flex items-center gap-1 text-xs text-destructive hover:text-destructive/80 font-semibold px-2 py-1 rounded border border-destructive/30 hover:border-destructive/60 transition-colors"
+                  title="Delete all players"
+                >
+                  <Trash2 className="h-3 w-3" /> Clear All
+                </button>
+              )}
+            </div>
+          </CardTitle>
+        </CardHeader>
+
+        {/* Delete-all confirm dialog */}
+        {showDeleteAll && (
+          <div className="mx-4 mb-4 rounded-xl border-2 border-destructive/40 bg-destructive/5 p-4 flex flex-col gap-3">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-bold text-destructive">Delete all {players.length} players?</p>
+                <p className="text-xs text-muted-foreground mt-0.5">This cannot be undone. You can re-add players afterwards.</p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" variant="destructive" onClick={handleDeleteAll} disabled={isPending} className="flex-1">
+                {isPending ? <span className="tt-spinner tt-spinner-sm" /> : <Trash2 className="h-3.5 w-3.5" />}
+                Yes, delete all
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setShowDeleteAll(false)} className="flex-1">
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+        <CardContent>
+          {players.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">No players yet. Add players above.</p>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {/* Desktop column header */}
+              <div className="hidden sm:grid sm:grid-cols-[24px_1fr_52px_80px_64px] gap-2 px-2 pb-2 text-xs font-semibold uppercase tracking-wider border-b border-border text-muted-foreground">
+                <span>#</span><span>Name / Club</span><span className="text-center">Grp</span><span>Seed</span><span />
+              </div>
+
+              {sorted.map((player, idx) => {
+                const isEditing = editingId === player.id
+                return (
+                  <div key={player.id}
+                    className={cn(
+                      'rounded-lg px-3 py-2.5 transition-colors',
+                      'sm:grid sm:grid-cols-[24px_1fr_52px_80px_64px] sm:items-center sm:gap-2 sm:px-2',
+                      isEditing ? 'bg-muted/50 ring-1 ring-orange-500/30' : 'hover:bg-muted/20',
+                    )}>
+
+                    {/* # — desktop */}
+                    <span className="hidden sm:block text-xs tabular-nums text-right text-muted-foreground/60">{idx + 1}</span>
+
+                    {/* Name / club — editable */}
+                    {isEditing ? (
+                      <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+                        <Input value={editName} onChange={e => setEditName(e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && saveEdit(player.id)}
+                          placeholder="Player name" className="h-7 text-sm" autoFocus />
+                        <Input value={editClub} onChange={e => setEditClub(e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && saveEdit(player.id)}
+                          placeholder="Club (optional)" className="h-7 text-xs" />
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between gap-2 min-w-0">
+                        <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
+                          {/* # — mobile */}
+                          <span className="sm:hidden text-xs text-muted-foreground/50 tabular-nums w-5 shrink-0">{idx + 1}.</span>
+                          {/* Seed badge */}
+                          {player.seed != null && (
+                            <span className="seed-badge shrink-0 text-[10px] h-5 min-w-[20px] px-1">{player.seed}</span>
+                          )}
+                          {/* Group badge — mobile only (desktop has column) */}
+                          {player.preferred_group != null && (
+                            <span className="sm:hidden inline-flex items-center justify-center h-5 min-w-[20px] px-1 rounded bg-orange-100 dark:bg-orange-950/50 text-orange-700 dark:text-orange-300 text-[10px] font-bold shrink-0"
+                              title={`Preferred Group ${player.preferred_group}`}>
+                              G{player.preferred_group}
+                            </span>
+                          )}
+                          <div className="flex flex-col min-w-0 overflow-hidden">
+                            <span className="font-medium text-sm truncate text-foreground dark:text-white">{player.name}</span>
+                            {player.club && (
+                              <span className="text-xs truncate text-muted-foreground">{player.club}</span>
+                            )}
+                          </div>
+                        </div>
+                        {/* Mobile actions */}
+                        {!isLocked && (
+                          <div className="flex gap-1 shrink-0 sm:hidden">
+                            <button onClick={() => startEdit(player)} disabled={isPending}
+                              className="p-1.5 rounded text-muted-foreground hover:text-foreground transition-colors" title="Edit">
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                            <button onClick={() => handleDelete(player)} disabled={isPending}
+                              className="p-1.5 rounded text-muted-foreground hover:text-destructive transition-colors" title="Remove">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Group — desktop column */}
+                    <div className="hidden sm:flex sm:justify-center">
+                      {player.preferred_group != null ? (
+                        <span className="inline-flex items-center justify-center h-5 min-w-[20px] px-1 rounded bg-orange-100 dark:bg-orange-950/50 text-orange-700 dark:text-orange-300 text-[10px] font-bold"
+                          title={`Preferred Group ${player.preferred_group}`}>
+                          {player.preferred_group}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground/40">—</span>
+                      )}
+                    </div>
+
+                    {/* Seed input — desktop column (no upper limit) */}
+                    <div className="hidden sm:block">
+                      {!isLocked ? (
+                        <Input
+                          key={`seed-${player.id}-${player.seed}`}
+                          type="number" min={1}
+                          defaultValue={player.seed ?? ''}
+                          onBlur={e => handleSeedChange(player.id, e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') handleSeedChange(player.id, (e.target as HTMLInputElement).value)
+                          }}
+                          disabled={isEditing || isPending}
+                          className="h-7 text-xs w-16" placeholder="—"
+                        />
+                      ) : (
+                        player.seed != null
+                          ? <span className="seed-badge">{player.seed}</span>
+                          : <span className="text-xs text-muted-foreground/60">—</span>
+                      )}
+                    </div>
+
+                    {/* Actions — desktop column */}
+                    <div className="hidden sm:flex gap-1 justify-end shrink-0">
+                      {!isLocked && (
+                        isEditing ? (
+                          <>
+                            <button onClick={() => saveEdit(player.id)} disabled={isPending || !editName.trim()}
+                              className="p-1.5 rounded text-orange-600 hover:text-orange-500 disabled:opacity-40 transition-colors" title="Save">
+                              <Check className="h-4 w-4" />
+                            </button>
+                            <button onClick={cancelEdit}
+                              className="p-1.5 rounded text-muted-foreground hover:text-foreground transition-colors" title="Cancel">
+                              <X className="h-4 w-4" />
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button onClick={() => startEdit(player)} disabled={isPending}
+                              className="p-1.5 rounded text-muted-foreground hover:text-foreground transition-colors" title="Edit">
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                            <button onClick={() => handleDelete(player)} disabled={isPending}
+                              className="p-1.5 rounded text-muted-foreground hover:text-destructive transition-colors" title="Remove">
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </>
+                        )
+                      )}
+                    </div>
+
+                    {/* Mobile: edit confirm / cancel */}
+                    {isEditing && (
+                      <div className="flex gap-2 mt-2 sm:hidden">
+                        <button onClick={() => saveEdit(player.id)} disabled={isPending || !editName.trim()}
+                          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-orange-500 text-white text-xs font-semibold disabled:opacity-40">
+                          <Check className="h-3.5 w-3.5" /> Save
+                        </button>
+                        <button onClick={cancelEdit}
+                          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg border border-border text-xs font-semibold">
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+function StatCard({ label, value, icon }: {
+  label: string; value: string | number; icon: React.ReactNode
+}) {
+  return (
+    <div className="flex flex-col gap-1 rounded-xl bg-muted/40 border border-border p-3 sm:p-4">
+      <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-foreground">
+        {icon}
+        <span className="truncate">{label}</span>
+      </div>
+      <div className="font-display text-xl sm:text-2xl font-bold text-foreground dark:text-white">
+        {value}
+      </div>
+    </div>
+  )
+}

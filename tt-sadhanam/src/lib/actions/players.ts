@@ -1,0 +1,281 @@
+'use server'
+
+import { revalidatePath } from 'next/cache'
+import { createClient } from '@/lib/supabase/server'
+
+// Revalidate all paths that could show this tournament's data
+async function revalidateTournament(tournamentId: string) {
+  const supabase = createClient()
+  // Look up championship_id so we can revalidate both route trees
+  const { data: t } = await supabase
+    .from('tournaments')
+    .select('championship_id')
+    .eq('id', tournamentId)
+    .single()
+
+  revalidatePath(`/admin/tournaments/${tournamentId}`)
+  if (t?.championship_id) {
+    revalidatePath(`/admin/championships/${t.championship_id}/events/${tournamentId}`)
+    revalidatePath(`/championships/${t.championship_id}/events/${tournamentId}`)
+  }
+}
+
+// ── Add single player ─────────────────────────────────────────────────────────
+export async function addPlayer(tournamentId: string, formData: FormData): Promise<{ error?: string }> {
+  const supabase = createClient()
+  const name      = (formData.get('name') as string)?.trim()
+  const club      = (formData.get('club') as string)?.trim() || null
+  const seedRaw   = formData.get('seed') as string
+  const groupRaw  = formData.get('preferred_group') as string
+  const seed      = seedRaw ? parseInt(seedRaw, 10) : null
+  const groupNum  = groupRaw ? parseInt(groupRaw, 10) : null
+  const preferred_group = groupNum && Number.isInteger(groupNum) && groupNum >= 1 ? groupNum : null
+
+  if (!name) return { error: 'Player name is required' }
+  if (name.length < 2) return { error: 'Name must be at least 2 characters' }
+
+  if (seed) {
+    const { data: existing } = await supabase
+      .from('players')
+      .select('id, name')
+      .eq('tournament_id', tournamentId)
+      .eq('seed', seed)
+      .maybeSingle()
+    if (existing) return { error: `Seed ${seed} is already assigned to ${existing.name}` }
+  }
+
+  const { data: dupName } = await supabase
+    .from('players')
+    .select('id')
+    .eq('tournament_id', tournamentId)
+    .ilike('name', name)
+    .maybeSingle()
+  if (dupName) return { error: `A player named "${name}" already exists` }
+
+  const { error } = await supabase.from('players').insert({
+    tournament_id: tournamentId,
+    name,
+    club,
+    seed: seed || null,
+    preferred_group,
+  })
+  if (error) return { error: error.message }
+
+  await revalidateTournament(tournamentId)
+  return {}
+}
+
+// ── Bulk add players from multiline text ──────────────────────────────────────
+// Format: Name | Club | Seed | Group
+// Only Name is required. Group is a positive integer (1, 2, 3…) or empty.
+export async function bulkAddPlayers(tournamentId: string, text: string): Promise<{ error?: string; count?: number }> {
+  const supabase = createClient()
+
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+  if (!lines.length) return { error: 'No player names provided' }
+
+  const { count } = await supabase
+    .from('players')
+    .select('id', { count: 'exact', head: true })
+    .eq('tournament_id', tournamentId)
+  const rows = lines.map(line => {
+    const parts          = line.split('|').map(p => p.trim())
+    const name           = parts[0] ?? ''
+    const club           = parts[1] || null
+    const rawSeed        = parts[2]
+    const rawGroup       = parts[3]
+    const seed           = rawSeed ? parseInt(rawSeed, 10) : null
+    const validSeed      = seed && Number.isInteger(seed) && seed >= 1 ? seed : null
+    const groupNum       = rawGroup ? parseInt(rawGroup, 10) : null
+    const preferredGroup = groupNum && Number.isInteger(groupNum) && groupNum >= 1 ? groupNum : null
+    return { tournament_id: tournamentId, name, club, seed: validSeed, preferred_group: preferredGroup }
+  }).filter(r => r.name.trim().length >= 1)
+
+  if (!rows.length) return { error: 'No valid player names found' }
+
+  const { error } = await supabase.from('players').insert(rows)
+  if (error) {
+    if (error.message.includes('unique') || error.message.includes('duplicate')) {
+      return { error: 'Some seeds are already taken — remove duplicate seeds and try again' }
+    }
+    return { error: error.message }
+  }
+
+  await revalidateTournament(tournamentId)
+  return { count: rows.length }
+}
+
+// ── Update player seed ────────────────────────────────────────────────────────
+export async function updatePlayerSeed(
+  tournamentId: string,
+  playerId: string,
+  seed: number | null,
+): Promise<{ error?: string }> {
+  const supabase = createClient()
+
+  if (seed) {
+    // Unset any existing player with this seed first
+    await supabase
+      .from('players')
+      .update({ seed: null })
+      .eq('tournament_id', tournamentId)
+      .eq('seed', seed)
+      .neq('id', playerId)
+  }
+
+  const { error } = await supabase
+    .from('players')
+    .update({ seed })
+    .eq('id', playerId)
+  if (error) return { error: error.message }
+
+  await revalidateTournament(tournamentId)
+  return {}
+}
+
+// ── Delete player ─────────────────────────────────────────────────────────────
+export async function deletePlayer(tournamentId: string, playerId: string): Promise<{ error?: string }> {
+  const supabase = createClient()
+  const { error } = await supabase.from('players').delete().eq('id', playerId)
+  if (error) return { error: error.message }
+  await revalidateTournament(tournamentId)
+  return {}
+}
+
+// ── Update player name/club ───────────────────────────────────────────────────
+export async function updatePlayer(
+  tournamentId: string,
+  playerId: string,
+  updates: { name?: string; club?: string | null },
+): Promise<{ error?: string }> {
+  const supabase = createClient()
+
+  if (updates.name !== undefined) {
+    const trimmed = updates.name.trim()
+    if (!trimmed || trimmed.length < 2) return { error: 'Name must be at least 2 characters' }
+    updates.name = trimmed
+  }
+
+  const { error } = await supabase.from('players').update(updates).eq('id', playerId)
+  if (error) return { error: error.message }
+  await revalidateTournament(tournamentId)
+  return {}
+}
+
+// ── Bulk add players from Excel/CSV sheet data ────────────────────────────────
+// Called after client-side parsing; receives already-normalised rows.
+export async function bulkAddPlayersFromSheet(
+  tournamentId: string,
+  rows: Array<{
+    name:           string
+    club?:          string | null
+    seed?:          number | null
+    preferredGroup?: number | null   // 1=A, 2=B, …
+  }>,
+): Promise<{ error?: string; count?: number; rowErrors?: Record<number, string> }> {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  if (!rows.length) return { error: 'No rows provided' }
+
+  // Load existing players to check for duplicates / seed collisions
+  const { data: existing } = await supabase
+    .from('players')
+    .select('id, name, seed')
+    .eq('tournament_id', tournamentId)
+
+  const existingNames = new Set((existing ?? []).map(p => p.name.toLowerCase()))
+  const existingSeeds = new Set((existing ?? []).filter(p => p.seed).map(p => p.seed))
+
+  // Per-row validation
+  const rowErrors: Record<number, string> = {}
+  const seenNames = new Set<string>()
+  const seenSeeds = new Set<number>()
+
+  const validRows: Array<{
+    tournament_id:   string
+    name:            string
+    club:            string | null
+    seed:            number | null
+    preferred_group: number | null
+  }> = []
+
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i]
+    const name = r.name?.trim()
+    if (!name || name.length < 1) { rowErrors[i] = 'Name is required'; continue }
+
+    const nameLower = name.toLowerCase()
+    if (existingNames.has(nameLower) || seenNames.has(nameLower)) {
+      rowErrors[i] = `"${name}" already exists`; continue
+    }
+
+    let seed: number | null = r.seed ?? null
+    if (seed !== null) {
+      if (!Number.isInteger(seed) || seed < 1) {
+        rowErrors[i] = `Seed must be a positive integer (got ${seed})`; continue
+      }
+      if (existingSeeds.has(seed) || seenSeeds.has(seed)) {
+        rowErrors[i] = `Seed ${seed} is already taken`; continue
+      }
+      seenSeeds.add(seed)
+    }
+
+    seenNames.add(nameLower)
+    validRows.push({
+      tournament_id:   tournamentId,
+      name,
+      club:            r.club?.trim() || null,
+      seed:            seed,
+      preferred_group: r.preferredGroup ?? null,
+    })
+  }
+
+  if (!validRows.length) {
+    return { error: 'No valid rows to insert', rowErrors }
+  }
+
+  const { error } = await supabase.from('players').insert(validRows)
+  if (error) {
+    if (error.message.includes('unique') || error.message.includes('duplicate')) {
+      return { error: 'Duplicate seed conflict — check your seeding values', rowErrors }
+    }
+    return { error: error.message, rowErrors }
+  }
+
+  await revalidateTournament(tournamentId)
+  return { count: validRows.length, rowErrors: Object.keys(rowErrors).length ? rowErrors : undefined }
+}
+
+// ── Delete ALL players for a tournament ───────────────────────────────────────
+export async function deleteAllPlayers(tournamentId: string): Promise<{ error?: string; count?: number }> {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  // Safety: don't allow if bracket is already generated
+  const { data: t } = await supabase
+    .from('tournaments')
+    .select('bracket_generated, stage1_complete, stage2_bracket_generated')
+    .eq('id', tournamentId)
+    .single()
+  if (t?.bracket_generated || t?.stage1_complete || t?.stage2_bracket_generated) {
+    return { error: 'Cannot delete players after a draw has been generated. Reset the draw first.' }
+  }
+
+  const { data: existing } = await supabase
+    .from('players')
+    .select('id')
+    .eq('tournament_id', tournamentId)
+  const count = existing?.length ?? 0
+
+  const { error } = await supabase
+    .from('players')
+    .delete()
+    .eq('tournament_id', tournamentId)
+  if (error) return { error: error.message }
+
+  await revalidateTournament(tournamentId)
+  return { count }
+}

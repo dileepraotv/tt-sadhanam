@@ -1,0 +1,1091 @@
+'use client'
+
+/**
+ * TeamLeagueStage
+ *
+ * Admin stage panel for format_type = 'team_league'.
+ *
+ * view='teams'    → Create/manage teams, add players, bulk import, generate schedule
+ * view='schedule' → Fixtures by round with submatch detail and standings
+ */
+
+import { useState, useTransition, useEffect, useRef } from 'react'
+import {
+  Shield, Plus, Trash2, Users, RefreshCw, PlayCircle,
+  ChevronDown, ChevronRight, Trophy, Upload, X,
+  AlertTriangle,
+} from 'lucide-react'
+import { cn } from '@/lib/utils'
+import type { Tournament, Team, TeamMatch } from '@/lib/types'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/index'
+import { NextStepBanner } from './NextStepBanner'
+import { toast } from '@/components/ui/toaster'
+import { useLoading } from '@/components/shared/GlobalLoader'
+import { createClient } from '@/lib/supabase/client'
+import {
+  createTeam,
+  deleteTeam,
+  upsertTeamPlayers,
+  generateTeamSchedule,
+  resetTeamLeague,
+} from '@/lib/actions/teamLeague'
+import { useRouter } from 'next/navigation'
+
+interface Props {
+  tournament: Tournament
+  matchBase:  string
+  view:       'teams' | 'schedule'
+}
+
+interface TeamWithPlayers {
+  id:            string
+  tournament_id: string
+  name:          string
+  short_name:    string | null
+  color:         string | null
+  created_at:    string
+  updated_at:    string
+  players:       { id: string; name: string; position: number }[]
+}
+
+// ── Data loading hook ─────────────────────────────────────────────────────────
+
+function useTeamData(tournamentId: string) {
+  const supabase                      = createClient()
+  const [teams, setTeams]             = useState<TeamWithPlayers[]>([])
+  const [teamMatches, setTeamMatches] = useState<TeamMatch[]>([])
+  const [loading, setLoading]         = useState(true)
+
+  const loadData = async () => {
+    setLoading(true)
+    const [teamsRes, tmRes] = await Promise.all([
+      supabase
+        .from('teams')
+        .select('*, team_players(id, name, position)')
+        .eq('tournament_id', tournamentId)
+        .order('created_at'),
+      supabase
+        .from('team_matches')
+        .select(`
+          *,
+          team_a:team_a_id(id,name,short_name,color),
+          team_b:team_b_id(id,name,short_name,color),
+          submatches:team_match_submatches(id,match_order,label,player_a_name,player_b_name,match_id)
+        `)
+        .eq('tournament_id', tournamentId)
+        .order('round'),
+    ])
+
+    setTeams((teamsRes.data ?? []).map(t => ({
+      ...t,
+      players: ((t.team_players as { id: string; name: string; position: number }[]) ?? [])
+        .sort((a, b) => a.position - b.position),
+    })) as TeamWithPlayers[])
+
+    setTeamMatches((tmRes.data ?? []) as unknown as TeamMatch[])
+    setLoading(false)
+  }
+
+  useEffect(() => { loadData() }, [tournamentId])
+
+  useEffect(() => {
+    const channel = supabase
+      .channel(`team-league-${tournamentId}`)
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'team_matches', filter: `tournament_id=eq.${tournamentId}` },
+        () => loadData(),
+      )
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'teams', filter: `tournament_id=eq.${tournamentId}` },
+        () => loadData(),
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [tournamentId])
+
+  return { teams, teamMatches, loading, loadData }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main component
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function TeamLeagueStage({ tournament, matchBase, view }: Props) {
+  const [isPending, startTransition] = useTransition()
+  const { setLoading }               = useLoading()
+  const router                       = useRouter()
+
+  const { teams, teamMatches, loading, loadData } = useTeamData(tournament.id)
+
+  const isGenerated = tournament.bracket_generated
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16 gap-3">
+        <div className="tt-spinner" />
+        <span className="text-sm text-muted-foreground">Loading team data…</span>
+      </div>
+    )
+  }
+
+  if (view === 'schedule') {
+    return (
+      <TeamScheduleView
+        tournament={tournament}
+        teams={teams}
+        teamMatches={teamMatches}
+        matchBase={matchBase}
+        loadData={loadData}
+        isPending={isPending}
+        startTransition={startTransition}
+        setLoading={setLoading}
+        router={router}
+        isGenerated={isGenerated}
+      />
+    )
+  }
+
+  return (
+    <TeamSetupView
+      tournament={tournament}
+      teams={teams}
+      teamMatches={teamMatches}
+      loadData={loadData}
+      isPending={isPending}
+      startTransition={startTransition}
+      setLoading={setLoading}
+      router={router}
+      isGenerated={isGenerated}
+    />
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Team Setup View
+// ─────────────────────────────────────────────────────────────────────────────
+
+function TeamSetupView({
+  tournament, teams, teamMatches, loadData,
+  isPending, startTransition, setLoading, router, isGenerated,
+}: {
+  tournament: Tournament
+  teams: TeamWithPlayers[]
+  teamMatches: TeamMatch[]
+  loadData: () => Promise<void>
+  isPending: boolean
+  startTransition: ReturnType<typeof useTransition>[1]
+  setLoading: (v: boolean) => void
+  router: ReturnType<typeof useRouter>
+  isGenerated: boolean
+}) {
+  const [newTeamName, setNewTeamName]   = useState('')
+  const [newTeamShort, setNewTeamShort] = useState('')
+  const [newTeamColor, setNewTeamColor] = useState('#F06321')
+  const [editingTeamId, setEditingTeamId] = useState<string | null>(null)
+  const [playerNames, setPlayerNames]     = useState<string[]>(['', ''])
+  const [showImport, setShowImport]       = useState(false)
+  const [showReset, setShowReset]         = useState(false)
+
+  const editingTeam = teams.find(t => t.id === editingTeamId) ?? null
+
+  const teamMatchCount = (teams.length * (teams.length - 1)) / 2
+
+  const handleAddTeam = () => {
+    if (!newTeamName.trim()) return
+    setLoading(true)
+    startTransition(async () => {
+      const res = await createTeam({
+        tournamentId: tournament.id,
+        name:         newTeamName.trim(),
+        shortName:    newTeamShort.trim() || undefined,
+        color:        newTeamColor,
+      })
+      setLoading(false)
+      if (res.error) {
+        toast({ title: 'Failed to create team', description: res.error, variant: 'destructive' })
+      } else {
+        setNewTeamName(''); setNewTeamShort('')
+        await loadData()
+        toast({ title: `Team "${newTeamName.trim()}" created` })
+      }
+    })
+  }
+
+  const handleDeleteTeam = (teamId: string, teamName: string) => {
+    setLoading(true)
+    startTransition(async () => {
+      const res = await deleteTeam(teamId, tournament.id)
+      setLoading(false)
+      if (res.error) {
+        toast({ title: 'Failed to delete team', description: res.error, variant: 'destructive' })
+      } else {
+        await loadData()
+        toast({ title: `Team "${teamName}" deleted` })
+      }
+    })
+  }
+
+  const handleOpenEditPlayers = (team: TeamWithPlayers) => {
+    setEditingTeamId(team.id)
+    const names = team.players.map(p => p.name)
+    while (names.length < 2) names.push('')
+    setPlayerNames(names)
+  }
+
+  const handleSavePlayers = () => {
+    if (!editingTeamId) return
+    const filtered = playerNames.map((n, i) => ({ name: n.trim(), position: i + 1 }))
+      .filter(p => p.name)
+    setLoading(true)
+    startTransition(async () => {
+      const res = await upsertTeamPlayers({
+        tournamentId: tournament.id,
+        teamId:       editingTeamId,
+        players:      filtered,
+      })
+      setLoading(false)
+      if (res.error) {
+        toast({ title: 'Failed to save players', description: res.error, variant: 'destructive' })
+      } else {
+        setEditingTeamId(null)
+        await loadData()
+        toast({ title: 'Players saved' })
+      }
+    })
+  }
+
+  const handleGenerate = () => {
+    setLoading(true)
+    startTransition(async () => {
+      const res = await generateTeamSchedule(tournament.id)
+      setLoading(false)
+      if (res.error) {
+        toast({ title: 'Generation failed', description: res.error, variant: 'destructive' })
+      } else {
+        await loadData()
+        router.refresh()
+        toast({ title: `✅ Schedule generated — ${res.teamMatchCount} fixtures` })
+      }
+    })
+  }
+
+  const handleReset = () => {
+    setLoading(true)
+    setShowReset(false)
+    startTransition(async () => {
+      const res = await resetTeamLeague(tournament.id)
+      setLoading(false)
+      if (res.error) {
+        toast({ title: 'Reset failed', description: res.error, variant: 'destructive' })
+      } else {
+        await loadData()
+        router.refresh()
+        toast({ title: 'Team league reset' })
+      }
+    })
+  }
+
+  // ── Edit players modal ──────────────────────────────────────────────────────
+  if (editingTeamId && editingTeam) {
+    return (
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setEditingTeamId(null)}
+            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ChevronRight className="h-4 w-4 rotate-180" />
+            Back to Teams
+          </button>
+        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <div className="w-3 h-3 rounded-full shrink-0" style={{ background: editingTeam.color ?? '#F06321' }} />
+              Players — {editingTeam.name}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <p className="text-xs text-muted-foreground">
+              Position 1 = top singles player. Add as many players as needed for your tie format.
+            </p>
+            {playerNames.map((name, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <span className="text-xs font-mono text-muted-foreground w-6 shrink-0 text-center">{i + 1}</span>
+                <input
+                  value={name}
+                  onChange={e => setPlayerNames(prev => { const n = [...prev]; n[i] = e.target.value; return n })}
+                  placeholder={i === 0 ? 'Player 1 — top singles (e.g. John Smith)' : i === 1 ? 'Player 2 (e.g. Alex Jones)' : `Player ${i + 1}`}
+                  className="flex-1 px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/50"
+                />
+                {playerNames.length > 2 && (
+                  <button
+                    type="button"
+                    onClick={() => setPlayerNames(p => p.filter((_, idx) => idx !== i))}
+                    className="p-1.5 text-muted-foreground hover:text-destructive transition-colors"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => setPlayerNames(p => [...p, ''])}
+              className="text-xs text-orange-500 hover:underline self-start flex items-center gap-1"
+            >
+              <Plus className="h-3 w-3" /> Add another player
+            </button>
+            <div className="flex gap-2 mt-2">
+              <Button size="sm" variant="outline" onClick={() => setEditingTeamId(null)}>Cancel</Button>
+              <Button size="sm" onClick={handleSavePlayers} disabled={isPending}>Save Players</Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  // ── Import dialog ───────────────────────────────────────────────────────────
+  if (showImport) {
+    return (
+      <BulkImportDialog
+        tournamentId={tournament.id}
+        onClose={() => setShowImport(false)}
+        onDone={async () => { setShowImport(false); await loadData(); router.refresh() }}
+      />
+    )
+  }
+
+  // ── Main setup view ─────────────────────────────────────────────────────────
+  const canGenerate = teams.length >= 2 && !isGenerated
+
+  return (
+    <div className="flex flex-col gap-6">
+
+      {/* Step banner */}
+      {teams.length === 0 ? (
+        <NextStepBanner
+          variant="action"
+          step="Step 1"
+          title="Create teams"
+          description="Add at least 2 teams, then assign players to each team."
+        />
+      ) : isGenerated ? (
+        <NextStepBanner
+          variant="action"
+          title="Schedule generated"
+          description={`${teamMatches.length} fixtures created. View them in the Schedule tab.`}
+        />
+      ) : teams.some(t => t.players.length === 0) ? (
+        <NextStepBanner
+          variant="warning"
+          title="Assign players to all teams"
+          description="Each team needs at least one player before generating the schedule."
+        />
+      ) : (
+        <NextStepBanner
+          variant="action"
+          step="Step 2"
+          title="Generate schedule"
+          description={`${teams.length} teams → ${teamMatchCount} fixtures, each with up to 5 individual matches.`}
+        />
+      )}
+
+      {/* Team list */}
+      {teams.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-muted-foreground uppercase tracking-wider">
+              Teams ({teams.length})
+            </h3>
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 text-xs"
+              onClick={() => setShowImport(true)}
+              disabled={isGenerated}
+            >
+              <Upload className="h-3.5 w-3.5" /> Import
+            </Button>
+          </div>
+          {teams.map(team => (
+            <Card key={team.id}>
+              <CardContent className="p-3">
+                <div className="flex items-center gap-3">
+                  <div
+                    className="w-3 h-10 rounded-full shrink-0"
+                    style={{ background: team.color ?? '#F06321' }}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-sm text-foreground">{team.name}</span>
+                      {team.short_name && (
+                        <span className="text-xs text-muted-foreground border border-border rounded px-1.5 py-0.5 font-mono">
+                          {team.short_name}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {team.players.length === 0 ? (
+                        <span className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                          <AlertTriangle className="h-3 w-3" /> No players yet
+                        </span>
+                      ) : (
+                        <>
+                          {team.players.map(p => (
+                            <span key={p.id} className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                              {p.position}. {p.name}
+                            </span>
+                          ))}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleOpenEditPlayers(team)}
+                      className="text-xs h-7 px-2"
+                      disabled={isGenerated}
+                    >
+                      <Users className="h-3 w-3 mr-1" />Players
+                    </Button>
+                    {!isGenerated && (
+                      <button
+                        onClick={() => handleDeleteTeam(team.id, team.name)}
+                        className="p-1.5 text-muted-foreground hover:text-destructive transition-colors"
+                        title="Delete team"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Add team + import row */}
+      {!isGenerated && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between text-sm">
+              <span className="flex items-center gap-2">
+                <Plus className="h-4 w-4 text-orange-500" />
+                Add Team
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 text-xs"
+                onClick={() => setShowImport(true)}
+              >
+                <Upload className="h-3.5 w-3.5" /> Bulk Import
+              </Button>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <input
+                value={newTeamName}
+                onChange={e => setNewTeamName(e.target.value)}
+                placeholder="Team name (e.g. TT Lions)"
+                className="px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/50"
+                onKeyDown={e => e.key === 'Enter' && handleAddTeam()}
+              />
+              <input
+                value={newTeamShort}
+                onChange={e => setNewTeamShort(e.target.value)}
+                placeholder="Short name (e.g. TTL) — optional"
+                className="px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/50"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-muted-foreground">Team colour:</label>
+              <input
+                type="color"
+                value={newTeamColor}
+                onChange={e => setNewTeamColor(e.target.value)}
+                className="h-8 w-10 rounded border border-border cursor-pointer"
+              />
+              <span className="text-xs font-mono text-muted-foreground">{newTeamColor}</span>
+            </div>
+            <Button
+              onClick={handleAddTeam}
+              disabled={!newTeamName.trim() || isPending}
+              className="gap-2 self-start"
+              size="sm"
+            >
+              <Plus className="h-4 w-4" /> Add Team
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Generate button */}
+      {canGenerate && (
+        <Button
+          onClick={handleGenerate}
+          disabled={isPending}
+          className="gap-2 w-full"
+          size="lg"
+        >
+          {isPending
+            ? <><span className="tt-spinner tt-spinner-sm" /> Generating…</>
+            : <><PlayCircle className="h-5 w-5" /> Generate Team Schedule</>
+          }
+        </Button>
+      )}
+
+      {/* Reset */}
+      {isGenerated && (
+        <div className="mt-2">
+          {!showReset ? (
+            <button
+              onClick={() => setShowReset(true)}
+              className="text-xs text-muted-foreground hover:text-destructive transition-colors"
+            >
+              Reset schedule & start over…
+            </button>
+          ) : (
+            <Card className="border-destructive/40">
+              <CardContent className="p-4 flex flex-col gap-3">
+                <p className="text-sm font-semibold text-destructive">
+                  ⚠️ This will delete all fixtures and scores. Are you sure?
+                </p>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={() => setShowReset(false)}>Cancel</Button>
+                  <Button size="sm" variant="destructive" onClick={handleReset} disabled={isPending}>
+                    <RefreshCw className="h-3.5 w-3.5 mr-1" /> Reset
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Team Schedule View
+// ─────────────────────────────────────────────────────────────────────────────
+
+function TeamScheduleView({
+  tournament, teams, teamMatches, matchBase, isGenerated,
+}: {
+  tournament: Tournament
+  teams: TeamWithPlayers[]
+  teamMatches: TeamMatch[]
+  matchBase: string
+  loadData: () => Promise<void>
+  isPending: boolean
+  startTransition: ReturnType<typeof useTransition>[1]
+  setLoading: (v: boolean) => void
+  router: ReturnType<typeof useRouter>
+  isGenerated: boolean
+}) {
+  const [openFixtures, setOpenFixtures] = useState<Set<number>>(new Set([1]))
+
+  if (!isGenerated || teamMatches.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
+        <Shield className="h-10 w-10 text-muted-foreground/40" />
+        <p className="text-muted-foreground text-sm font-medium">Schedule not yet generated.</p>
+        <p className="text-muted-foreground text-xs">
+          Go to the Teams tab to create teams, add players, then generate the schedule.
+        </p>
+      </div>
+    )
+  }
+
+  // Team standings
+  const standings = teams.map(team => {
+    const played = teamMatches.filter(m =>
+      (m.team_a_id === team.id || m.team_b_id === team.id) && m.status === 'complete')
+    const wins   = played.filter(m => m.winner_team_id === team.id).length
+    const losses = played.length - wins
+    return { team, played: played.length, wins, losses }
+  }).sort((a, b) => b.wins - a.wins || b.played - a.played)
+
+  // Fixtures by round
+  const fixturesByRound = teamMatches.reduce<Map<number, TeamMatch[]>>((map, m) => {
+    if (!map.has(m.round)) map.set(m.round, [])
+    map.get(m.round)!.push(m)
+    return map
+  }, new Map())
+  const rounds = Array.from(fixturesByRound.entries()).sort(([a], [b]) => a - b)
+
+  const doneCount  = teamMatches.filter(m => m.status === 'complete').length
+  const totalCount = teamMatches.length
+
+  const toggleFixture = (round: number) => {
+    setOpenFixtures(prev => {
+      const next = new Set(prev)
+      next.has(round) ? next.delete(round) : next.add(round)
+      return next
+    })
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      {/* Progress */}
+      <Card className="overflow-hidden">
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-semibold text-foreground">League Progress</span>
+            <span className="text-xs text-muted-foreground">{doneCount}/{totalCount} ties complete</span>
+          </div>
+          <div className="h-2 rounded-full bg-muted overflow-hidden">
+            <div
+              className="h-full bg-orange-500 transition-all duration-500"
+              style={{ width: totalCount ? `${(doneCount / totalCount) * 100}%` : '0%' }}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Standings */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Trophy className="h-4 w-4 text-amber-500" />
+            Team Standings
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="px-3 py-2 text-left text-xs font-bold text-muted-foreground w-8">#</th>
+                  <th className="px-3 py-2 text-left text-xs font-bold text-muted-foreground">Team</th>
+                  <th className="px-3 py-2 text-center text-xs font-bold text-muted-foreground">P</th>
+                  <th className="px-3 py-2 text-center text-xs font-bold text-muted-foreground">W</th>
+                  <th className="px-3 py-2 text-center text-xs font-bold text-muted-foreground">L</th>
+                </tr>
+              </thead>
+              <tbody>
+                {standings.map((row, i) => (
+                  <tr key={row.team.id} className={cn(
+                    'border-b border-border/50',
+                    i === 0 && standings[0].wins > 0 && 'bg-amber-50/40 dark:bg-amber-900/10',
+                  )}>
+                    <td className="px-3 py-2 text-xs text-muted-foreground font-mono">{i + 1}</td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        {i === 0 && standings[0].wins > 0 && <Trophy className="h-3.5 w-3.5 text-amber-500 shrink-0" />}
+                        <div className="w-2 h-2 rounded-full shrink-0" style={{ background: row.team.color ?? '#F06321' }} />
+                        <span className="font-medium text-sm">{row.team.name}</span>
+                        {row.team.short_name && (
+                          <span className="text-xs text-muted-foreground">({row.team.short_name})</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-center text-xs text-muted-foreground">{row.played}</td>
+                    <td className="px-3 py-2 text-center text-xs font-bold text-emerald-600 dark:text-emerald-400">{row.wins}</td>
+                    <td className="px-3 py-2 text-center text-xs text-muted-foreground">{row.losses}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Fixtures by round */}
+      <div className="flex flex-col gap-2">
+        <h3 className="text-sm font-bold text-muted-foreground uppercase tracking-wider">
+          Fixtures
+        </h3>
+        {rounds.map(([round, fixtures]) => {
+          const isOpen = openFixtures.has(round)
+          const done   = fixtures.filter(f => f.status === 'complete').length
+          const live   = fixtures.filter(f => f.status === 'live').length
+
+          return (
+            <Card key={round}>
+              <button
+                onClick={() => toggleFixture(round)}
+                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/30 transition-colors text-left"
+              >
+                {isOpen
+                  ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                  : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                }
+                <span className="font-semibold text-sm text-foreground flex-1">Round {round}</span>
+                {live > 0 && <span className="live-dot" />}
+                {done === fixtures.length && done > 0 && (
+                  <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Done</span>
+                )}
+                <span className="text-xs text-muted-foreground">{done}/{fixtures.length}</span>
+              </button>
+
+              {isOpen && (
+                <div className="px-4 pb-4 flex flex-col gap-3">
+                  {fixtures.map(tm => (
+                    <TeamMatchAdminCard
+                      key={tm.id}
+                      teamMatch={tm}
+                      matchBase={matchBase}
+                    />
+                  ))}
+                </div>
+              )}
+            </Card>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bulk Import Dialog
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Distinct palette for auto-assigned team colors
+const TEAM_COLORS = [
+  '#F06321', '#6366f1', '#10b981', '#f59e0b', '#ef4444',
+  '#8b5cf6', '#06b6d4', '#84cc16', '#f97316', '#ec4899',
+  '#14b8a6', '#a855f7', '#3b82f6', '#eab308', '#22c55e',
+]
+function pickColor(index: number) {
+  return TEAM_COLORS[index % TEAM_COLORS.length]
+}
+
+function BulkImportDialog({
+  tournamentId,
+  onClose,
+  onDone,
+}: {
+  tournamentId: string
+  onClose: () => void
+  onDone: () => Promise<void>
+}) {
+  const [isPending, startTransition] = useTransition()
+  const { setLoading }               = useLoading()
+  const [pasteText, setPasteText]    = useState('')
+  const [preview, setPreview]        = useState<{ team: string; player: string }[]>([])
+  const [parseError, setParseError]  = useState('')
+  const fileRef                      = useRef<HTMLInputElement>(null)
+
+  // Parse CSV/TSV text into team/player rows
+  function parseText(raw: string): { team: string; player: string }[] {
+    const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+    const rows: { team: string; player: string }[] = []
+    for (const line of lines) {
+      // Skip header-like lines
+      if (/^team\s*(name)?\s*[\|,\t]/i.test(line)) continue
+      // Support | , \t delimiters
+      const parts = line.split(/[|,\t]/).map(p => p.trim())
+      if (parts.length >= 2 && parts[0] && parts[1]) {
+        rows.push({ team: parts[0], player: parts[1] })
+      }
+    }
+    return rows
+  }
+
+  const handleTextChange = (text: string) => {
+    setPasteText(text)
+    setParseError('')
+    if (!text.trim()) { setPreview([]); return }
+    const rows = parseText(text)
+    if (rows.length === 0) {
+      setParseError('Could not parse any rows. Use format: Team Name | Player Name (one per line).')
+    }
+    setPreview(rows)
+  }
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setParseError('')
+
+    try {
+      if (file.name.endsWith('.csv') || file.name.endsWith('.tsv') || file.name.endsWith('.txt')) {
+        const text = await file.text()
+        handleTextChange(text)
+      } else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+        // Use xlsx library
+        const { read, utils } = await import('xlsx')
+        const buffer = await file.arrayBuffer()
+        const wb     = read(buffer, { type: 'array' })
+        const ws     = wb.Sheets[wb.SheetNames[0]]
+        const rows   = utils.sheet_to_json<string[]>(ws, { header: 1, defval: '' }) as string[][]
+        const lines  = rows.map(r => r.slice(0, 2).join('\t')).join('\n')
+        handleTextChange(lines)
+      } else {
+        setParseError('Unsupported file type. Use .csv, .txt, or .xlsx')
+      }
+    } catch {
+      setParseError('Failed to read file. Try pasting the data instead.')
+    }
+  }
+
+  const handleImport = () => {
+    if (preview.length === 0) return
+    setLoading(true)
+    startTransition(async () => {
+      try {
+        // Group by team name
+        const teamMap = new Map<string, string[]>()
+        for (const row of preview) {
+          const key = row.team.trim()
+          if (!teamMap.has(key)) teamMap.set(key, [])
+          teamMap.get(key)!.push(row.player.trim())
+        }
+
+        let teamIndex = 0
+        for (const [teamName, players] of teamMap.entries()) {
+          const createRes = await createTeam({
+            tournamentId,
+            name:  teamName,
+            color: pickColor(teamIndex++),
+          })
+          if (createRes.error) continue
+          const teamId = createRes.teamId!
+          await upsertTeamPlayers({
+            tournamentId,
+            teamId,
+            players: players.map((name, i) => ({ name, position: i + 1 })),
+          })
+        }
+
+        setLoading(false)
+        toast({ title: `Imported ${teamMap.size} teams with ${preview.length} players` })
+        await onDone()
+      } catch (err: unknown) {
+        setLoading(false)
+        toast({ title: 'Import failed', description: (err as Error).message, variant: 'destructive' })
+      }
+    })
+  }
+
+  // Group preview by team for display
+  const previewByTeam = preview.reduce<Map<string, string[]>>((m, r) => {
+    if (!m.has(r.team)) m.set(r.team, [])
+    m.get(r.team)!.push(r.player)
+    return m
+  }, new Map())
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ChevronRight className="h-4 w-4 rotate-180" />
+          Back to Teams
+        </button>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Upload className="h-4 w-4 text-orange-500" />
+            Bulk Import Teams & Players
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <div className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground space-y-1">
+            <p className="font-semibold text-foreground">Format: one row per player</p>
+            <p>Team Name | Player Name  <span className="opacity-60">(or use comma/tab as separator)</span></p>
+            <p className="font-mono bg-background border border-border rounded p-2 mt-1">
+              TT Lions | John Smith<br />
+              TT Lions | Alex Jones<br />
+              Tigers FC | Raj Kumar<br />
+              Tigers FC | Priya Singh
+            </p>
+          </div>
+
+          {/* File upload */}
+          <div className="flex items-center gap-3">
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".csv,.txt,.tsv,.xlsx,.xls"
+              className="hidden"
+              onChange={handleFileUpload}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => fileRef.current?.click()}
+            >
+              <Upload className="h-3.5 w-3.5" /> Upload CSV / Excel
+            </Button>
+            <span className="text-xs text-muted-foreground">or paste below</span>
+          </div>
+
+          {/* Paste area */}
+          <textarea
+            value={pasteText}
+            onChange={e => handleTextChange(e.target.value)}
+            placeholder={`TT Lions | John Smith\nTT Lions | Alex Jones\nTigers FC | Raj Kumar`}
+            rows={8}
+            className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm font-mono focus:outline-none focus:ring-2 focus:ring-orange-500/50 resize-y"
+          />
+
+          {parseError && (
+            <p className="text-xs text-destructive flex items-center gap-1">
+              <AlertTriangle className="h-3.5 w-3.5" /> {parseError}
+            </p>
+          )}
+
+          {/* Preview */}
+          {previewByTeam.size > 0 && (
+            <div className="flex flex-col gap-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Preview — {previewByTeam.size} teams, {preview.length} players
+              </p>
+              <div className="flex flex-col gap-2 max-h-48 overflow-y-auto">
+                {Array.from(previewByTeam.entries()).map(([team, players]) => (
+                  <div key={team} className="rounded-lg border border-border p-2">
+                    <p className="text-sm font-semibold text-foreground">{team}</p>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {players.map((p, i) => (
+                        <span key={i} className="text-xs bg-muted px-1.5 py-0.5 rounded">
+                          {i + 1}. {p}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onClose} className="flex-1">Cancel</Button>
+            <Button
+              onClick={handleImport}
+              disabled={preview.length === 0 || isPending}
+              className="flex-1 gap-1.5"
+            >
+              {isPending
+                ? <><span className="tt-spinner tt-spinner-sm" /> Importing…</>
+                : <><Plus className="h-4 w-4" /> Import {previewByTeam.size > 0 ? `${previewByTeam.size} Teams` : ''}</>
+              }
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Team Match Admin Card (inline in schedule)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function TeamMatchAdminCard({
+  teamMatch,
+  matchBase,
+}: {
+  teamMatch: TeamMatch
+  matchBase: string
+}) {
+  const [open, setOpen] = useState(false)
+  const teamA  = teamMatch.team_a
+  const teamB  = teamMatch.team_b
+  const aScore = teamMatch.team_a_score
+  const bScore = teamMatch.team_b_score
+  const isLive = teamMatch.status === 'live'
+  const isDone = teamMatch.status === 'complete'
+
+  // submatches comes from the alias in the query
+  const subs = (teamMatch as unknown as { submatches?: typeof teamMatch.submatches }).submatches
+    ?? (teamMatch as unknown as { team_match_submatches?: typeof teamMatch.submatches }).team_match_submatches
+    ?? []
+
+  return (
+    <div className={cn(
+      'rounded-xl border border-border overflow-hidden',
+      isDone && 'opacity-90',
+      isLive && 'border-orange-400 dark:border-orange-500',
+    )}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full px-4 py-3 flex items-center gap-3 hover:bg-muted/20 transition-colors text-left"
+      >
+        {open
+          ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        }
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              {teamA && (
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full" style={{ background: teamA.color ?? '#F06321' }} />
+                  <span className={cn('font-semibold text-sm', isDone && teamMatch.winner_team_id === teamA.id && 'text-emerald-600 dark:text-emerald-400')}>
+                    {teamA.short_name ?? teamA.name}
+                  </span>
+                </span>
+              )}
+              <span className="text-muted-foreground text-xs">vs</span>
+              {teamB && (
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full" style={{ background: teamB.color ?? '#6366f1' }} />
+                  <span className={cn('font-semibold text-sm', isDone && teamMatch.winner_team_id === teamB.id && 'text-emerald-600 dark:text-emerald-400')}>
+                    {teamB.short_name ?? teamB.name}
+                  </span>
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 shrink-0 ml-2">
+              {isLive && <span className="live-dot" />}
+              <span className={cn(
+                'font-mono font-bold text-sm',
+                isDone ? 'text-foreground' : 'text-muted-foreground',
+              )}>
+                {aScore}–{bScore}
+              </span>
+              {isDone && <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase">Done</span>}
+            </div>
+          </div>
+        </div>
+      </button>
+
+      {open && subs.length > 0 && (
+        <div className="border-t border-border/50 px-4 py-2 flex flex-col gap-1 bg-muted/10">
+          {[...subs]
+            .sort((a, b) => a.match_order - b.match_order)
+            .map(sm => (
+              <div key={sm.id} className="flex items-center gap-2 py-1.5">
+                <span className="text-xs text-muted-foreground w-16 shrink-0">{sm.label}</span>
+                <span className="text-xs flex-1">
+                  {sm.player_a_name ?? '—'} vs {sm.player_b_name ?? '—'}
+                </span>
+                {sm.match_id && (
+                  <a
+                    href={`${matchBase}/${sm.match_id}`}
+                    className="text-xs text-orange-500 hover:underline shrink-0"
+                  >
+                    Score
+                  </a>
+                )}
+              </div>
+            ))}
+        </div>
+      )}
+      {open && subs.length === 0 && (
+        <div className="border-t border-border/50 px-4 py-3 text-xs text-muted-foreground bg-muted/10">
+          No sub-matches available yet.
+        </div>
+      )}
+    </div>
+  )
+}
