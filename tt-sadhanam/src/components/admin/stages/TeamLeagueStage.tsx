@@ -21,7 +21,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/index'
 import { NextStepBanner } from './NextStepBanner'
 import { toast } from '@/components/ui/toaster'
 import { useLoading, InlineLoader } from '@/components/shared/GlobalLoader'
-import { WinnerTrophy, matchStatusClasses } from '@/components/shared/MatchUI'
+import { WinnerTrophy, matchStatusClasses, T } from '@/components/shared/MatchUI'
 import { createClient } from '@/lib/supabase/client'
 import {
   createTeam, updateTeam, deleteTeam, upsertTeamPlayers,
@@ -994,16 +994,17 @@ function TeamScheduleView({
     a.team.name.localeCompare(b.team.name)
   )
 
+  // Only RR rounds in the schedule tab — KO rounds belong in the Knockout tab
   const rounds = Array.from(
-    teamMatches.reduce<Map<number, TeamMatchRich[]>>((map, m) => {
+    rrMatches.reduce<Map<number, TeamMatchRich[]>>((map, m) => {
       if (!map.has(m.round)) map.set(m.round, [])
       map.get(m.round)!.push(m)
       return map
     }, new Map()).entries()
   ).sort(([a], [b]) => a - b)
 
-  const doneCount  = teamMatches.filter(m => m.status === 'complete').length
-  const totalCount = teamMatches.length
+  const doneCount  = rrMatches.filter(m => m.status === 'complete').length
+  const totalCount = rrMatches.length
 
   const toggleFixture = (round: number) =>
     setOpenFixtures(prev => {
@@ -1169,7 +1170,7 @@ function TeamScheduleView({
 
       {/* Fixtures */}
       <div className="flex flex-col gap-2">
-        <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Fixtures</h3>
+        <h3 className={T.roundHeading}>Fixtures</h3>
         {rounds.map(([round, fixtures]) => {
           const isOpen = openFixtures.has(round)
           const done   = fixtures.filter(f => f.status === 'complete').length
@@ -1201,7 +1202,7 @@ function TeamScheduleView({
                       teamMatch={tm}
                       matchBase={matchBase}
                       tournamentId={tournament.id}
-                      highlightFix={highlightFix}
+                      highlightFix={highlightFix as string}
                     />
                   ))}
                 </div>
@@ -1465,7 +1466,7 @@ function TeamKOBracketUI({
             matchBase={matchBase}
             tournamentId={tournamentId}
             isCorbillon={isCorbillon}
-            highlightFix={highlightFix}
+            highlightFix={highlightFix as string}
             loadData={loadData}
           />
         ))}

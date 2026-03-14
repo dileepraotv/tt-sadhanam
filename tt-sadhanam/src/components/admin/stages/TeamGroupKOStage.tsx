@@ -13,12 +13,12 @@
  *   3. Knockout   — Show KO bracket after finalisation (delegates to TeamLeagueStage view='bracket')
  */
 
-import React, { useState, useTransition, useEffect, useRef, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import React, { useState, useTransition, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
   Shield, Plus, RefreshCw, PlayCircle, Check, Users,
   ChevronDown, ChevronRight, Layers, Trophy, AlertTriangle, ArrowRight, Lock,
-  Upload, X, Pencil, Trash2,
+  Upload, X, Pencil, Trash2, Swords, ChevronUp,
 } from 'lucide-react'
 import { cn }                from '@/lib/utils'
 import type { Tournament }   from '@/lib/types'
@@ -27,7 +27,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/index'
 import { NextStepBanner }    from './NextStepBanner'
 import { toast }             from '@/components/ui/toaster'
 import { InlineLoader, useLoading } from '@/components/shared/GlobalLoader'
-import { WinnerTrophy, matchStatusClasses } from '@/components/shared/MatchUI'
+import { WinnerTrophy, matchStatusClasses, T } from '@/components/shared/MatchUI'
 import { createClient }      from '@/lib/supabase/client'
 import {
   createTeam, updateTeam, deleteTeam, upsertTeamPlayers,
@@ -84,8 +84,9 @@ interface TeamMatchRich {
   team_a_id:      string
   team_b_id:      string
   // Team display data embedded at load time — never needs a runtime lookup
-  team_a_name:    string
-  team_b_name:    string
+  // null = TBD slot (KO bracket match not yet seeded)
+  team_a_name:    string | null
+  team_b_name:    string | null
   team_a_color:   string
   team_b_color:   string
   round:          number
@@ -235,63 +236,53 @@ function useTeamGroupData(tournamentId: string) {
 
   // ── Load match data — reads names from the stable ref ────────────────────
   const loadMatches = useCallback(async (gen: number): Promise<boolean> => {
-    // Fetch matches flat (no FK joins)
-    const { data: rawMatches } = await sb
+    // Single join query: team_matches + submatches + scoring in one round-trip.
+    // PostgREST embeds submatches and scoring inline — no serial N+1 queries.
+    const { data: raw } = await sb
       .from('team_matches')
-      .select('id, team_a_id, team_b_id, round, round_name, status, team_a_score, team_b_score, winner_team_id, group_id')
+      .select(`
+        id, team_a_id, team_b_id, round, round_name,
+        status, team_a_score, team_b_score, winner_team_id, group_id,
+        submatches:team_match_submatches(
+          id, match_order, label,
+          player_a_name, player_b_name,
+          team_a_player_id, team_b_player_id,
+          team_a_player2_id, team_b_player2_id,
+          match_id,
+          scoring:match_id(id, player1_games, player2_games, status, match_format)
+        )
+      `)
       .eq('tournament_id', tournamentId)
       .order('round')
     if (gen !== genRef.current) return false
 
-    const matchIds = (rawMatches ?? []).map((m: any) => m.id as string)
-
-    // Fetch submatches flat
-    const { data: rawSMs } = matchIds.length > 0
-      ? await sb.from('team_match_submatches')
-          .select('id, team_match_id, match_order, label, player_a_name, player_b_name, team_a_player_id, team_b_player_id, team_a_player2_id, team_b_player2_id, match_id')
-          .in('team_match_id', matchIds)
-          .order('match_order')
-      : { data: [] }
-    if (gen !== genRef.current) return false
-
-    // Fetch rubber scoring flat
-    const smMatchIds = ((rawSMs ?? []) as any[]).map(s => s.match_id).filter(Boolean) as string[]
-    const { data: rawScoring } = smMatchIds.length > 0
-      ? await sb.from('matches')
-          .select('id, player1_games, player2_games, status, match_format')
-          .in('id', smMatchIds)
-      : { data: [] }
-    if (gen !== genRef.current) return false
-
-    // Index scoring and submatches
-    const scoringIdx = new Map(((rawScoring ?? []) as any[]).map(s => [s.id as string, s]))
-    const smIdx = new Map<string, Submatch[]>()
-    for (const sm of (rawSMs ?? []) as any[]) {
-      const list = smIdx.get(sm.team_match_id) ?? []
-      list.push({
-        id: sm.id, match_order: sm.match_order, label: sm.label,
-        player_a_name: sm.player_a_name, player_b_name: sm.player_b_name,
-        team_a_player_id: sm.team_a_player_id, team_b_player_id: sm.team_b_player_id,
-        team_a_player2_id: sm.team_a_player2_id, team_b_player2_id: sm.team_b_player2_id,
-        match_id: sm.match_id,
-        scoring: sm.match_id ? (scoringIdx.get(sm.match_id) ?? null) : null,
-      })
-      smIdx.set(sm.team_match_id, list)
-    }
-
-    // Resolve names from the STABLE REF — never from component state
     const nameMap = teamNamesRef.current
-    const matchList: TeamMatchRich[] = (rawMatches ?? []).map((m: any) => {
+    const matchList: TeamMatchRich[] = (raw ?? []).map((m: any) => {
       const tA = nameMap.get(m.team_a_id as string)
       const tB = nameMap.get(m.team_b_id as string)
+      const subs: Submatch[] = ((m.submatches ?? []) as any[])
+        .sort((a: any, b: any) => a.match_order - b.match_order)
+        .map((sm: any): Submatch => ({
+          id:               sm.id,
+          match_order:      sm.match_order,
+          label:            sm.label,
+          player_a_name:    sm.player_a_name,
+          player_b_name:    sm.player_b_name,
+          team_a_player_id: sm.team_a_player_id,
+          team_b_player_id: sm.team_b_player_id,
+          team_a_player2_id: sm.team_a_player2_id,
+          team_b_player2_id: sm.team_b_player2_id,
+          match_id:         sm.match_id,
+          scoring:          sm.scoring ?? null,
+        }))
       return {
-        id: m.id,
+        id:             m.id,
         team_a_id:      m.team_a_id,
         team_b_id:      m.team_b_id,
-        team_a_name:    tA?.name  ?? `[${String(m.team_a_id).slice(0,6)}]`,
-        team_b_name:    tB?.name  ?? `[${String(m.team_b_id).slice(0,6)}]`,
-        team_a_color:   tA?.color ?? '#888',
-        team_b_color:   tB?.color ?? '#888',
+        team_a_name:    m.team_a_id ? (tA?.name ?? m.team_a_id.slice(0,6)) : null,
+        team_b_name:    m.team_b_id ? (tB?.name ?? m.team_b_id.slice(0,6)) : null,
+        team_a_color:   tA?.color ?? '#94a3b8',
+        team_b_color:   tB?.color ?? '#94a3b8',
         round:          m.round,
         round_name:     m.round_name,
         status:         m.status,
@@ -299,7 +290,7 @@ function useTeamGroupData(tournamentId: string) {
         team_b_score:   m.team_b_score,
         winner_team_id: m.winner_team_id,
         group_id:       m.group_id,
-        submatches: (smIdx.get(m.id) ?? []).sort((a, b) => a.match_order - b.match_order),
+        submatches:     subs,
       }
     })
 
@@ -1205,14 +1196,14 @@ function RubberScorer({
 // ─────────────────────────────────────────────────────────────────────────────
 
 function LineupEditor({
-  submatch, teamA, teamB, isCorbillon,
-  onChange,
+  submatch, teamA, teamB, isCorbillon, onChange, sideOnly,
 }: {
   submatch:    Submatch
   teamA:       TeamWithPlayers | null
   teamB:       TeamWithPlayers | null
   isCorbillon: boolean
   onChange:    (aId: string|null, bId: string|null, a2Id?: string|null, b2Id?: string|null) => void
+  sideOnly?:   'a' | 'b'   // when set, renders only that team's selectors (for column layout)
 }) {
   const isDbl = isCorbillon && submatch.match_order === 3
 
@@ -1246,6 +1237,40 @@ function LineupEditor({
   const aPlayers = teamA?.players ?? []
   const bPlayers = teamB?.players ?? []
   const sel = 'px-2 py-1.5 rounded border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-orange-500/50 w-full'
+
+  // sideOnly: render only one team's selectors for the column layout
+  if (sideOnly === 'a') {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <select value={aId} onChange={e => handleA(e.target.value)} className={sel}>
+          <option value="">Select player…</option>
+          {aPlayers.map(p => <option key={p.id} value={p.id}>{p.position}. {p.name}</option>)}
+        </select>
+        {isDbl && (
+          <select value={a2Id} onChange={e => handleA2(e.target.value)} className={sel}>
+            <option value="">Partner…</option>
+            {aPlayers.filter(p => p.id !== aId).map(p => <option key={p.id} value={p.id}>{p.position}. {p.name}</option>)}
+          </select>
+        )}
+      </div>
+    )
+  }
+  if (sideOnly === 'b') {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <select value={bId} onChange={e => handleB(e.target.value)} className={sel}>
+          <option value="">Select player…</option>
+          {bPlayers.map(p => <option key={p.id} value={p.id}>{p.position}. {p.name}</option>)}
+        </select>
+        {isDbl && (
+          <select value={b2Id} onChange={e => handleB2(e.target.value)} className={sel}>
+            <option value="">Partner…</option>
+            {bPlayers.filter(p => p.id !== bId).map(p => <option key={p.id} value={p.id}>{p.position}. {p.name}</option>)}
+          </select>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="grid grid-cols-2 gap-2 mt-1.5">
@@ -1284,13 +1309,14 @@ function LineupEditor({
 // ─────────────────────────────────────────────────────────────────────────────
 
 function FixtureDetailPanel({
-  match, teams, isCorbillon, tournament, loadData,
+  match, teams, isCorbillon, tournament, loadData, showColumnLayout = false,
 }: {
-  match:       TeamMatchRich
-  teams:       TeamWithPlayers[]
-  isCorbillon: boolean
-  tournament:  { id: string; format: string }
-  loadData:    () => void
+  match:            TeamMatchRich
+  teams:            TeamWithPlayers[]
+  isCorbillon:      boolean
+  tournament:       { id: string; format: string }
+  loadData:         () => void
+  showColumnLayout?: boolean
 }) {
   const [expandedRubber, setExpandedRubber] = useState<string | null>(null)
   const [lineupEdits,    setLineupEdits]    = useState<Map<string, [string|null,string|null,string|null|undefined,string|null|undefined]>>(new Map())
@@ -1375,20 +1401,22 @@ function FixtureDetailPanel({
 
   return (
     <div className="flex flex-col gap-0 pt-1">
-      {/* Team score strip */}
-      <div className="flex items-center justify-between px-1 py-2 mb-2">
-        <div className="flex items-center gap-2">
-          <div className="h-2 w-2 rounded-full" style={{ backgroundColor: match.team_a_color }} />
-          <span className="text-sm font-semibold">{match.team_a_name}</span>
+      {/* Team score strip — only shown in compact group fixture view, not in KO column view */}
+      {!showColumnLayout && (
+        <div className="flex items-center justify-between px-1 py-2 mb-2">
+          <div className="flex items-center gap-2">
+            <div className="h-2 w-2 rounded-full" style={{ backgroundColor: match.team_a_color }} />
+            <span className="text-sm font-semibold">{match.team_a_name}</span>
+          </div>
+          <span className="text-lg font-bold font-mono tabular-nums">
+            {match.team_a_score} – {match.team_b_score}
+          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold">{match.team_b_name}</span>
+            <div className="h-2 w-2 rounded-full" style={{ backgroundColor: match.team_b_color }} />
+          </div>
         </div>
-        <span className="text-lg font-bold font-mono tabular-nums">
-          {match.team_a_score} – {match.team_b_score}
-        </span>
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold">{match.team_b_name}</span>
-          <div className="h-2 w-2 rounded-full" style={{ backgroundColor: match.team_b_color }} />
-        </div>
-      </div>
+      )}
 
       {/* Lineup save/status bar */}
       {!isLocked && (autoSaving || lineupDirty) && (
@@ -1409,53 +1437,142 @@ function FixtureDetailPanel({
       )}
 
       {/* Rubber rows */}
-      <div className="flex flex-col divide-y divide-border/40">
+      <div className={cn('flex flex-col', showColumnLayout ? 'divide-y divide-border/30' : 'divide-y divide-border/40')}>
         {match.submatches.map((sm, idx) => {
-          const sc         = sm.scoring
+          const sc           = sm.scoring
           const isRubberDone = sc?.status === 'complete'
-          const aWon       = isRubberDone && sc!.player1_games > sc!.player2_games
-          const bWon       = isRubberDone && sc!.player2_games > sc!.player1_games
-          const isExpanded = expandedRubber === sm.id
+          const smLive       = sc?.status === 'live'
+          const aWon         = isRubberDone && sc!.player1_games > sc!.player2_games
+          const bWon         = isRubberDone && sc!.player2_games > sc!.player1_games
+          const isExpanded   = expandedRubber === sm.id
+          const p1g          = sc?.player1_games ?? 0
+          const p2g          = sc?.player2_games ?? 0
 
+          if (showColumnLayout) {
+            // Column layout: matches TeamMatchBracketCard grid style
+            return (
+              <div key={sm.id} className={cn('px-4 py-3',
+                smLive && 'bg-orange-50/30 dark:bg-orange-950/10',
+                isRubberDone && 'bg-muted/10',
+              )}>
+                {/* Mobile label */}
+                <p className="sm:hidden text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-2">{sm.label}</p>
+                <div className="grid grid-cols-1 sm:grid-cols-[7rem_1fr_3rem_1fr_6rem] gap-2 items-start">
+                  {/* Match label (desktop) */}
+                  <div className="hidden sm:flex items-start pt-1">
+                    <span className="text-xs font-semibold text-foreground/80 leading-tight">{sm.label}</span>
+                  </div>
+                  {/* Team A player */}
+                  <div className="flex flex-col gap-1.5">
+                    {!isLocked ? (
+                      <LineupEditor
+                        submatch={sm}
+                        teamA={teamA}
+                        teamB={teamB}
+                        isCorbillon={isCorbillon}
+                        onChange={(a, b, a2, b2) => handleLineupChange(sm.id, a, b, a2, b2)}
+                        sideOnly="a"
+                      />
+                    ) : (
+                      <span className={cn('text-sm font-semibold truncate',
+                        aWon ? 'text-emerald-600 dark:text-emerald-400' : bWon ? 'text-muted-foreground' : '',
+                      )}>{sm.player_a_name ?? '—'}</span>
+                    )}
+                  </div>
+                  {/* vs */}
+                  <div className="hidden sm:flex items-center justify-center pt-1.5">
+                    <span className="text-[11px] font-bold text-muted-foreground/60">vs</span>
+                  </div>
+                  {/* Team B player */}
+                  <div className="flex flex-col gap-1.5">
+                    {!isLocked ? (
+                      <LineupEditor
+                        submatch={sm}
+                        teamA={teamA}
+                        teamB={teamB}
+                        isCorbillon={isCorbillon}
+                        onChange={(a, b, a2, b2) => handleLineupChange(sm.id, a, b, a2, b2)}
+                        sideOnly="b"
+                      />
+                    ) : (
+                      <span className={cn('text-sm font-semibold truncate',
+                        bWon ? 'text-emerald-600 dark:text-emerald-400' : aWon ? 'text-muted-foreground' : '',
+                      )}>{sm.player_b_name ?? '—'}</span>
+                    )}
+                  </div>
+                  {/* Score + scorer link */}
+                  <div className="flex sm:flex-col sm:items-end items-center gap-2 sm:gap-1 pt-0.5">
+                    {sc && (
+                      <div className={cn('flex items-center gap-1 text-xs font-mono font-bold tabular-nums',
+                        isRubberDone ? 'text-foreground' : smLive ? 'text-orange-500' : 'text-muted-foreground/50',
+                      )}>
+                        {smLive && <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse shrink-0" />}
+                        <span className={aWon ? 'text-emerald-600 dark:text-emerald-400' : ''}>{p1g}</span>
+                        <span className="text-muted-foreground/40">–</span>
+                        <span className={bWon ? 'text-emerald-600 dark:text-emerald-400' : ''}>{p2g}</span>
+                        {isRubberDone && <Check className="h-3 w-3 text-emerald-500 ml-0.5" />}
+                      </div>
+                    )}
+                    {/* Inline score entry toggle */}
+                    <button
+                      onClick={() => setExpandedRubber(isExpanded ? null : sm.id)}
+                      className={cn(
+                        'inline-flex items-center justify-center text-xs font-semibold px-2.5 py-1 rounded-lg border transition-colors whitespace-nowrap',
+                        isRubberDone
+                          ? 'text-emerald-600 border-emerald-200 dark:border-emerald-800/40 hover:bg-emerald-50 dark:hover:bg-emerald-950/30'
+                          : 'text-orange-500 border-orange-200 dark:border-orange-800/40 hover:bg-orange-50 dark:hover:bg-orange-950/30',
+                      )}
+                    >
+                      {isRubberDone ? 'Edit →' : 'Score →'}
+                    </button>
+                  </div>
+                </div>
+                {/* Expanded inline scorer */}
+                {isExpanded && (
+                  <div className="mt-3 pt-3 border-t border-border/30">
+                    <RubberScorer
+                      submatch={sm}
+                      teamA={teamA}
+                      teamB={teamB}
+                      isCorbillon={isCorbillon}
+                      tournamentId={tournament.id}
+                      matchFormat={format}
+                      onSaved={loadData}
+                    />
+                  </div>
+                )}
+              </div>
+            )
+          }
+
+          // Compact accordion layout for group fixtures
           return (
             <div key={sm.id} className="py-2.5">
-              {/* Rubber header (clickable) */}
               <button
                 onClick={() => setExpandedRubber(isExpanded ? null : sm.id)}
                 className="w-full flex items-center gap-2 text-left group"
               >
-                {/* Rubber number */}
                 <span className={cn(
                   'flex-none text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center',
                   isRubberDone ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300' : 'bg-muted text-muted-foreground'
                 )}>{idx + 1}</span>
-
-                {/* Label */}
                 <span className="text-xs font-medium text-muted-foreground flex-1">{sm.label}</span>
-
-                {/* Players */}
                 <span className="text-xs text-muted-foreground hidden sm:block">
                   {sm.player_a_name ?? '?'} <span className="opacity-40">vs</span> {sm.player_b_name ?? '?'}
                 </span>
-
-                {/* Result or score */}
                 {isRubberDone ? (
                   <span className="text-xs font-semibold font-mono shrink-0">
-                    <span className={cn(aWon ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/50')}>{sc!.player1_games}</span>
+                    <span className={cn(aWon ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/50')}>{p1g}</span>
                     <span className="text-muted-foreground mx-0.5">–</span>
-                    <span className={cn(bWon ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/50')}>{sc!.player2_games}</span>
+                    <span className={cn(bWon ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/50')}>{p2g}</span>
                   </span>
                 ) : (
                   <span className="text-[10px] text-muted-foreground/40 shrink-0">pending</span>
                 )}
-
                 <ChevronDown className={cn('h-3.5 w-3.5 text-muted-foreground transition-transform shrink-0', isExpanded && 'rotate-180')} />
               </button>
-
-              {/* Expanded content */}
               {isExpanded && (
                 <div className="mt-2">
-                  {/* Lineup editor */}
                   {!isLocked && (
                     <LineupEditor
                       submatch={sm}
@@ -1465,7 +1582,6 @@ function FixtureDetailPanel({
                       onChange={(a, b, a2, b2) => handleLineupChange(sm.id, a, b, a2, b2)}
                     />
                   )}
-                  {/* Score entry */}
                   <RubberScorer
                     submatch={sm}
                     teamA={teamA}
@@ -1762,7 +1878,7 @@ function GroupsTab({
                     {/* Standings table (ITTF columns) */}
                     {groupMatches.length > 0 && (
                       <div>
-                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Standings</p>
+                        <p className={cn(T.roundHeading, "mb-2")}>Standings</p>
                         <div className="overflow-x-auto rounded-lg border border-border">
                           <table className="w-full text-sm">
                             <thead>
@@ -1814,7 +1930,7 @@ function GroupsTab({
                     {/* Fixtures with inline scoring */}
                     {groupMatches.length > 0 && (
                       <div>
-                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Fixtures</p>
+                        <p className={cn(T.roundHeading, "mb-2")}>Fixtures</p>
                         <div className="flex flex-col gap-2">
                           {groupMatches.map(m => {
                             const isExpM     = expandedMatch === m.id
@@ -1830,7 +1946,7 @@ function GroupsTab({
                                     <div className="flex-1 min-w-0 flex items-center gap-2 text-sm">
                                       <div className="flex items-center gap-1.5 min-w-0">
                                         <WinnerTrophy show={isComplete && m.winner_team_id === m.team_a_id} />
-                                        <span className={cn('font-medium truncate', isComplete && m.winner_team_id !== m.team_a_id && 'text-muted-foreground')}>
+                                        <span className={cn(T.matchName, isComplete && m.winner_team_id !== m.team_a_id ? 'text-muted-foreground' : '')}>
                                           {m.team_a_name}
                                         </span>
                                       </div>
@@ -1910,7 +2026,129 @@ function GroupsTab({
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// KnockoutTab — shows the KO bracket for the team group+KO event
+// ─────────────────────────────────────────────────────────────────────────────
+// KOMatchCard — full-width expandable match card matching TeamMatchBracketCard
+// style from TeamLeagueStage: round tabs at top, team name + player dropdowns
+// ─────────────────────────────────────────────────────────────────────────────
+
+function KOMatchCard({ match, teams, isCorbillon, tournament, highlightFix, loadData }: {
+  match:       TeamMatchRich
+  teams:       TeamWithPlayers[]
+  isCorbillon: boolean
+  tournament:  Tournament
+  highlightFix?: string
+  loadData:    (s?: boolean) => Promise<void>
+}) {
+  const isHighlighted = !!highlightFix && highlightFix === match.id
+  const [open, setOpen] = useState(isHighlighted)
+  const isDone  = match.status === 'complete'
+  const isLive  = match.status === 'live'
+  const aWon    = isDone && match.winner_team_id === match.team_a_id
+  const bWon    = isDone && match.winner_team_id === match.team_b_id
+  const subsDone = match.submatches.filter(s => s.scoring?.status === 'complete').length
+
+  return (
+    <div className={cn(
+      'rounded-2xl border overflow-hidden transition-all',
+      isDone  && 'bg-muted/20 border-border/40 opacity-90',
+      isLive  && 'border-orange-400 dark:border-orange-500 shadow-md shadow-orange-100/40 dark:shadow-orange-950/30 bg-card',
+      !isLive && !isDone && 'bg-card border-border',
+      isHighlighted && 'ring-2 ring-orange-400/50',
+    )}>
+      {/* Header */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full text-left px-4 py-3.5 hover:bg-muted/20 transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          <div className="flex-1 min-w-0">
+            {/* Team A */}
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: match.team_a_color }} />
+              <WinnerTrophy show={aWon} size="sm" />
+              <span className={cn('font-bold text-sm truncate flex-1',
+                aWon ? 'text-emerald-600 dark:text-emerald-400' : bWon ? 'text-muted-foreground' : 'text-foreground',
+              )}>
+                {match.team_a_name ?? <span className="text-muted-foreground/40 italic">TBD</span>}
+              </span>
+              <span className={cn('font-mono font-bold tabular-nums text-base',
+                isDone ? 'text-foreground' : 'text-muted-foreground/60',
+              )}>{match.team_a_score}</span>
+            </div>
+            <div className="flex items-center gap-1 my-0.5 ml-9">
+              <span className="text-xs text-muted-foreground/40">—</span>
+            </div>
+            {/* Team B */}
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: match.team_b_color }} />
+              <WinnerTrophy show={bWon} size="sm" />
+              <span className={cn('font-bold text-sm truncate flex-1',
+                bWon ? 'text-emerald-600 dark:text-emerald-400' : aWon ? 'text-muted-foreground' : 'text-foreground',
+              )}>
+                {match.team_b_name ?? <span className="text-muted-foreground/40 italic">TBD</span>}
+              </span>
+              <span className={cn('font-mono font-bold tabular-nums text-base',
+                isDone ? 'text-foreground' : 'text-muted-foreground/60',
+              )}>{match.team_b_score}</span>
+            </div>
+            {/* Status row */}
+            <div className="flex items-center gap-2 mt-1.5 ml-0">
+              {isLive && <span className="flex items-center gap-1 text-[11px] font-bold text-orange-500"><span className="live-dot" /> Live</span>}
+              {isDone && <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">Complete</span>}
+              {!isLive && !isDone && (
+                <span className="text-[11px] text-muted-foreground">
+                  {subsDone}/{match.submatches.length} matches done
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-[11px] text-muted-foreground hidden sm:inline">
+              {open ? 'Hide' : 'Show'} matches
+            </span>
+            {open
+              ? <ChevronUp className="h-4 w-4 text-muted-foreground" />
+              : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+          </div>
+        </div>
+      </button>
+
+      {/* Live bar */}
+      {isLive && (
+        <div className="h-0.5" style={{ background: 'linear-gradient(90deg,#F06321,#F5853F,#F06321)', backgroundSize: '200% 100%' }} />
+      )}
+
+      {/* Expanded: sub-match details */}
+      {open && (
+        <div className="border-t border-border/50">
+          {/* Column headers */}
+          <div className="hidden sm:grid sm:grid-cols-[7rem_1fr_3rem_1fr_6rem] gap-2 px-4 pt-3 pb-1.5 items-center bg-muted/20">
+            <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">Match</span>
+            <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: match.team_a_color }}>
+              {match.team_a_name || 'Team A'}
+            </span>
+            <span />
+            <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: match.team_b_color }}>
+              {match.team_b_name || 'Team B'}
+            </span>
+            <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide text-right">Score</span>
+          </div>
+          <FixtureDetailPanel
+            match={match}
+            teams={teams}
+            isCorbillon={isCorbillon}
+            tournament={tournament}
+            loadData={() => loadData(true)}
+            showColumnLayout
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// KnockoutTab — tabbed bracket with round tabs + full-width match cards
 // ─────────────────────────────────────────────────────────────────────────────
 
 function KnockoutTab({ tournament, teams, koMatches, matchBase, loadData, isCorbillon, formatLabel }: {
@@ -1922,7 +2160,8 @@ function KnockoutTab({ tournament, teams, koMatches, matchBase, loadData, isCorb
   isCorbillon: boolean
   formatLabel: string
 }) {
-  const [expandedKO, setExpandedKO] = useState<string | null>(null)
+  const searchParams = useSearchParams()
+  const highlightFix: string = searchParams.get('fix') ?? ''
 
   if (koMatches.length === 0) {
     return (
@@ -1935,76 +2174,121 @@ function KnockoutTab({ tournament, teams, koMatches, matchBase, loadData, isCorb
     )
   }
 
-  // Group by round
-  const roundMap = new Map<number, TeamMatchRich[]>()
-  for (const m of koMatches) {
-    const arr = roundMap.get(m.round) ?? []
-    arr.push(m)
-    roundMap.set(m.round, arr)
+  // Group by round, sorted
+  const roundEntries = useMemo((): [number, TeamMatchRich[]][] => {
+    const map = new Map<number, TeamMatchRich[]>()
+    for (const m of koMatches) {
+      const arr = map.get(m.round) ?? []; arr.push(m); map.set(m.round, arr)
+    }
+    return [...map.entries()].sort(([a], [b]) => a - b)
+  }, [koMatches])
+
+  const totalRounds = roundEntries.length
+
+  // Auto-select active round: live > first incomplete > last
+  const latestRound = useMemo((): number => {
+    const live = koMatches.find(m => m.status === 'live')?.round
+    if (live) return live
+    const incomplete = koMatches.filter(m => m.status !== 'complete')
+    if (incomplete.length) return Math.min(...incomplete.map(m => m.round))
+    return (roundEntries[roundEntries.length - 1]?.[0] as number) ?? koMatches[0]?.round ?? 900
+  }, [koMatches, roundEntries])
+
+  const [activeRound, setActiveRound] = useState<number>(latestRound)
+  const prevLatest = useRef(latestRound)
+  useEffect(() => {
+    if (prevLatest.current !== latestRound) {
+      prevLatest.current = latestRound
+      setActiveRound(latestRound)
+    }
+  }, [latestRound])
+
+  const activeMatches = roundEntries.find(([r]: [number, TeamMatchRich[]]) => r === activeRound)?.[1] ?? []
+  const doneCount = koMatches.filter(m => m.status === 'complete').length
+  const liveCount = koMatches.filter(m => m.status === 'live').length
+
+  const getRoundLabel = (roundNum: number, idx: number) => {
+    const fromEnd = totalRounds - idx
+    if (fromEnd === 1) return '🏆 Final'
+    if (fromEnd === 2) return 'Semi-Finals'
+    if (fromEnd === 3) return 'Quarter-Finals'
+    return `Round of ${Math.pow(2, fromEnd)}`
   }
-  const rounds = [...roundMap.entries()].sort((a, b) => a[0] - b[0])
 
   return (
-    <div className="flex flex-col gap-4">
-      <h2 className="text-lg font-semibold">Knockout — {formatLabel}</h2>
+    <div className="flex flex-col gap-0">
+      {/* Header */}
+      <div className="flex items-center gap-3 mb-4">
+        <Swords className="h-5 w-5 text-amber-500" />
+        <div className="flex-1">
+          <h2 className="font-bold text-base text-foreground">{formatLabel} — Knockout</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {doneCount}/{koMatches.length} matches complete
+            {liveCount > 0 && <span className="ml-2 text-orange-500 font-semibold">· {liveCount} live</span>}
+          </p>
+        </div>
+      </div>
 
-      {rounds.map(([roundN, matches]) => {
-        const rName = matches[0]?.round_name ?? `Round ${roundN}`
-        return (
-          <div key={roundN} className="flex flex-col gap-2">
-            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">{rName}</h3>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {matches.map(m => {
-                const isComplete = m.status === 'complete'
-                const isLive     = m.status === 'live'
-                const doneCount  = m.submatches.filter(s => s.scoring?.status === 'complete').length
-                const firstPending = m.submatches.find(s => s.scoring?.status !== 'complete')
-                void firstPending // kept for future use
+      {/* Round tabs */}
+      <div
+        className="flex items-end gap-1 overflow-x-auto pb-0 scrollbar-hide border-b-2 mb-5"
+        style={{ borderColor: '#F06321' }}
+      >
+        {roundEntries.map(([roundNum, matches]: [number, TeamMatchRich[]], idx: number) => {
+          const isActive    = activeRound === roundNum
+          const liveInRound = matches.filter(m => m.status === 'live').length
+          const doneInRound = matches.filter(m => m.status === 'complete').length
+          const label       = getRoundLabel(roundNum, idx)
+          const isLatest    = roundNum === latestRound
 
-                return (
-                  <Card key={m.id} className={cn(matchStatusClasses(m.status), 'overflow-hidden')}>
-                    <CardContent className="pt-3 pb-3">
-                      {/* Clickable header */}
-                      <button className="w-full flex items-center gap-2 text-left"
-                        onClick={() => setExpandedKO(expandedKO === m.id ? null : m.id)}>
-                        <div className="flex-1 flex flex-col gap-1 min-w-0">
-                          <div className={cn('flex items-center gap-2', isComplete && m.winner_team_id !== m.team_a_id && 'opacity-50')}>
-                            <WinnerTrophy show={isComplete && m.winner_team_id === m.team_a_id} />
-                            <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: m.team_a_color }} />
-                            <span className="text-sm font-semibold flex-1 truncate">{m.team_a_name || 'TBD'}</span>
-                            <span className="text-sm font-bold font-mono">{m.team_a_score}</span>
-                          </div>
-                          <div className={cn('flex items-center gap-2', isComplete && m.winner_team_id !== m.team_b_id && 'opacity-50')}>
-                            <WinnerTrophy show={isComplete && m.winner_team_id === m.team_b_id} />
-                            <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: m.team_b_color }} />
-                            <span className="text-sm font-semibold flex-1 truncate">{m.team_b_name || 'TBD'}</span>
-                            <span className="text-sm font-bold font-mono">{m.team_b_score}</span>
-                          </div>
-                        </div>
-                        <div className="flex flex-col items-end gap-1 shrink-0">
-                          {isLive && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/40 text-orange-600">LIVE</span>}
-                          <span className="text-xs text-muted-foreground">{doneCount}/{m.submatches.length}</span>
-                          <ChevronDown className={cn('h-3.5 w-3.5 text-muted-foreground transition-transform', expandedKO === m.id && 'rotate-180')} />
-                        </div>
-                      </button>
-                      {/* Inline rubber scoring */}
-                      {expandedKO === m.id && (
-                        <FixtureDetailPanel
-                          match={m}
-                          teams={teams}
-                          isCorbillon={isCorbillon}
-                          tournament={tournament}
-                          loadData={() => loadData(true)}
-                        />
-                      )}
-                    </CardContent>
-                  </Card>
-                )
-              })}
-            </div>
-          </div>
-        )
-      })}
+          return (
+            <button
+              key={roundNum}
+              onClick={() => setActiveRound(roundNum)}
+              style={isActive
+                ? { background: '#F06321', color: '#fff', border: '2px solid #F06321', borderBottom: 'none' }
+                : undefined}
+              className={cn(
+                'shrink-0 px-4 pt-2 pb-2 text-sm font-bold transition-all rounded-t-lg whitespace-nowrap',
+                !isActive && isLatest && 'bg-orange-500/10 text-orange-600 dark:text-orange-400 border-2 border-b-0 border-orange-300 dark:border-orange-600/50',
+                !isActive && !isLatest && 'text-muted-foreground hover:text-foreground hover:bg-muted/60',
+              )}
+            >
+              {label}
+              {liveInRound > 0 && (
+                <span
+                  className="ml-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold"
+                  style={{ background: isActive ? 'rgba(255,255,255,0.35)' : '#F06321', color: '#fff' }}
+                >
+                  {liveInRound}
+                </span>
+              )}
+              {doneInRound === matches.length && doneInRound > 0 && !isActive && (
+                <span className="ml-1 text-[10px] font-bold text-emerald-500">✓</span>
+              )}
+            </button>
+          )
+        })}
+        <div className="flex-1" />
+      </div>
+
+      {/* Active round matches */}
+      <div className="flex flex-col gap-3">
+        {activeMatches.length === 0 && (
+          <div className="py-8 text-center text-muted-foreground text-sm">No matches in this round.</div>
+        )}
+        {(activeMatches as TeamMatchRich[]).map((m: TeamMatchRich) => (
+          <KOMatchCard
+            key={m.id}
+            match={m}
+            teams={teams}
+            isCorbillon={isCorbillon}
+            tournament={tournament}
+            highlightFix={highlightFix}
+            loadData={loadData}
+          />
+        ))}
+      </div>
     </div>
   )
 }

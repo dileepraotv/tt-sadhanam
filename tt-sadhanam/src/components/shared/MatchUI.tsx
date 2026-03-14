@@ -104,3 +104,35 @@ export function MatchStatusBadge({ status, className }: BadgeProps) {
     </span>
   )
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared typography + layout tokens
+// Use these across all event types for consistent sizing.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Consistent class sets for recurring UI elements.
+ * Import and use in any stage/bracket/public component.
+ */
+export const T = {
+  /** Group/Round heading — e.g. "Group 1", "Round of 16", "Semi-Final" */
+  roundHeading: 'text-xs font-bold text-muted-foreground uppercase tracking-wider',
+  /** Match heading — team name or player name in a fixture card header */
+  matchName:    'text-sm font-semibold truncate',
+  /** Match name — winning side */
+  matchNameWin: 'text-sm font-semibold truncate text-emerald-600 dark:text-emerald-400',
+  /** Match name — losing side */
+  matchNameLoss: 'text-sm font-semibold truncate text-muted-foreground',
+  /** Score display — large centered score */
+  score:        'font-mono font-bold tabular-nums text-base',
+  /** Score display — muted (not yet played) */
+  scoreMuted:   'font-mono font-bold tabular-nums text-base text-muted-foreground/60',
+  /** Sub-match label — "Singles 1 (A vs X)" etc. */
+  subLabel:     'text-xs font-semibold text-foreground/80',
+  /** Player name in sub-match row */
+  playerName:   'text-sm truncate',
+  /** Rubber/game score inline — "3-1" */
+  rubberScore:  'text-xs font-semibold font-mono tabular-nums',
+  /** Section title inside expanded fixture */
+  sectionTitle: 'text-xs font-bold text-muted-foreground uppercase tracking-wide',
+} as const
