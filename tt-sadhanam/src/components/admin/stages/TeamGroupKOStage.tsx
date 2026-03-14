@@ -306,7 +306,24 @@ function useTeamGroupData(tournamentId: string) {
   }, [tournamentId, loadData])
 
   return { teams, teamMatches, groups, stage, loading, loadData }
-}ipt')
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SheetJS lazy loader
+// ─────────────────────────────────────────────────────────────────────────────
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _xlsxCache: any = null
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function loadXLSX(): Promise<any> {
+  if (_xlsxCache) return _xlsxCache
+  if (typeof window !== 'undefined' && (window as any).XLSX) {
+    _xlsxCache = (window as any).XLSX; return _xlsxCache
+  }
+  await new Promise<void>((resolve, reject) => {
+    const existing = document.getElementById('sheetjs-cdn')
+    if (existing) { existing.addEventListener('load', () => resolve()); return }
+    const s = document.createElement('script')
     s.id = 'sheetjs-cdn'
     s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
     s.onload = () => resolve(); s.onerror = () => reject(new Error('Could not load SheetJS'))
