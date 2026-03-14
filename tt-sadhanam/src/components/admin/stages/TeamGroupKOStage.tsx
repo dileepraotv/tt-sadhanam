@@ -134,6 +134,45 @@ const inputCls =
   'placeholder:text-muted-foreground/60'
 
 // ─────────────────────────────────────────────────────────────────────────────
+// In-memory ITTF standings — runs on client data, no extra DB queries
+// ─────────────────────────────────────────────────────────────────────────────
+
+function computeStandings(groupId: string, teamIds: string[], matches: TeamMatchRich[]) {
+  type Row = { teamId: string; mW: number; mL: number; rW: number; rL: number; gW: number; gL: number }
+  const map = new Map<string, Row>(teamIds.map(id => [id, { teamId: id, mW: 0, mL: 0, rW: 0, rL: 0, gW: 0, gL: 0 }]))
+  const h2h = new Map<string, Map<string, number>>()
+  for (const id of teamIds) h2h.set(id, new Map())
+
+  for (const m of matches) {
+    if (m.group_id !== groupId || m.status !== 'complete') continue
+    const sA = map.get(m.team_a_id), sB = map.get(m.team_b_id)
+    if (m.winner_team_id === m.team_a_id) {
+      sA && sA.mW++; sB && sB.mL++
+      h2h.get(m.team_a_id)?.set(m.team_b_id, (h2h.get(m.team_a_id)?.get(m.team_b_id) ?? 0) + 1)
+    } else if (m.winner_team_id === m.team_b_id) {
+      sB && sB.mW++; sA && sA.mL++
+      h2h.get(m.team_b_id)?.set(m.team_a_id, (h2h.get(m.team_b_id)?.get(m.team_a_id) ?? 0) + 1)
+    }
+    for (const sm of m.submatches) {
+      const sc = sm.scoring; if (!sc || sc.status !== 'complete') continue
+      const aWon = sc.player1_games > sc.player2_games
+      if (sA) { sA.rW += aWon ? 1:0; sA.rL += aWon ? 0:1; sA.gW += sc.player1_games; sA.gL += sc.player2_games }
+      if (sB) { sB.rW += aWon ? 0:1; sB.rL += aWon ? 1:0; sB.gW += sc.player2_games; sB.gL += sc.player1_games }
+    }
+  }
+
+  const ratio = (w: number, l: number) => (w + l === 0 ? 0 : w / (w + l))
+  return [...map.values()].sort((a, b) => {
+    if (b.mW !== a.mW) return b.mW - a.mW
+    const rr = ratio(b.rW, b.rL) - ratio(a.rW, a.rL); if (Math.abs(rr) > 1e-9) return rr
+    const gr = ratio(b.gW, b.gL) - ratio(a.gW, a.gL); if (Math.abs(gr) > 1e-9) return gr
+    const bH = h2h.get(b.teamId)?.get(a.teamId) ?? 0
+    const aH = h2h.get(a.teamId)?.get(b.teamId) ?? 0
+    return bH - aH
+  })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Data hook — loads teams, stage, groups, and team_matches in parallel
 // ─────────────────────────────────────────────────────────────────────────────
 
