@@ -31,12 +31,15 @@ import { WinnerTrophy, matchStatusClasses } from '@/components/shared/MatchUI'
 import { createClient }      from '@/lib/supabase/client'
 import {
   createTeam, updateTeam, deleteTeam, upsertTeamPlayers,
+  batchUpdateSubmatchPlayers,
 } from '@/lib/actions/teamLeague'
 import {
   createTeamRRStage, generateTeamGroups, generateTeamGroupFixtures,
-  finalizeTeamGroups, resetTeamGroupStage,
+  finalizeTeamGroups, resetTeamGroupStage, updateTeamGroupMatchWinner,
 } from '@/lib/actions/teamGroupKO'
-import { computeGroupLayout, groupLayoutSummary } from '@/lib/roundrobin/groupLayout'
+import { saveGameScore, declareMatchWinner } from '@/lib/actions/matches'
+import { computeGroupLayout, groupLayoutSummary, snakeAssign } from '@/lib/roundrobin/groupLayout'
+import type { MatchFormat } from '@/lib/types'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Local types (mirrors TeamLeagueStage to avoid cross-file coupling)
@@ -58,12 +61,16 @@ interface TeamWithPlayers {
 }
 
 interface Submatch {
-  id:              string
-  match_order:     number
-  label:           string
-  player_a_name:   string | null
-  player_b_name:   string | null
-  match_id:        string | null
+  id:               string
+  match_order:      number
+  label:            string
+  player_a_name:    string | null
+  player_b_name:    string | null
+  team_a_player_id: string | null
+  team_b_player_id: string | null
+  team_a_player2_id?: string | null
+  team_b_player2_id?: string | null
+  match_id:         string | null
   scoring?: {
     id:            string
     player1_games: number
@@ -151,6 +158,8 @@ function useTeamGroupData(tournamentId: string) {
           submatches:team_match_submatches(
             id,match_order,label,
             player_a_name,player_b_name,
+            team_a_player_id,team_b_player_id,
+            team_a_player2_id,team_b_player2_id,
             match_id,
             scoring:match_id(id,player1_games,player2_games,status)
           )
@@ -226,23 +235,38 @@ function useTeamGroupData(tournamentId: string) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function computeStandings(groupId: string, teamIds: string[], matches: TeamMatchRich[]) {
-  const map = new Map(teamIds.map(id => [id, { teamId: id, mW: 0, mL: 0, smW: 0, gd: 0 }]))
+  type Row = { teamId: string; mW: number; mL: number; rW: number; rL: number; gW: number; gL: number }
+  const map = new Map<string, Row>(teamIds.map(id => [id, { teamId: id, mW: 0, mL: 0, rW: 0, rL: 0, gW: 0, gL: 0 }]))
+  const h2h = new Map<string, Map<string, number>>()
+  for (const id of teamIds) h2h.set(id, new Map())
 
   for (const m of matches) {
     if (m.group_id !== groupId || m.status !== 'complete') continue
-    const sA = map.get(m.team_a_id)
-    const sB = map.get(m.team_b_id)
-    if (m.winner_team_id === m.team_a_id) { sA && sA.mW++; sB && sB.mL++ }
-    else if (m.winner_team_id === m.team_b_id) { sB && sB.mW++; sA && sA.mL++ }
+    const sA = map.get(m.team_a_id), sB = map.get(m.team_b_id)
+    if (m.winner_team_id === m.team_a_id) {
+      sA && sA.mW++; sB && sB.mL++
+      h2h.get(m.team_a_id)?.set(m.team_b_id, (h2h.get(m.team_a_id)?.get(m.team_b_id) ?? 0) + 1)
+    } else if (m.winner_team_id === m.team_b_id) {
+      sB && sB.mW++; sA && sA.mL++
+      h2h.get(m.team_b_id)?.set(m.team_a_id, (h2h.get(m.team_b_id)?.get(m.team_a_id) ?? 0) + 1)
+    }
     for (const sm of m.submatches) {
-      const sc = sm.scoring
-      if (!sc || sc.status !== 'complete') continue
-      if (sA) { sA.smW += sc.player1_games > sc.player2_games ? 1 : 0; sA.gd += sc.player1_games - sc.player2_games }
-      if (sB) { sB.smW += sc.player2_games > sc.player1_games ? 1 : 0; sB.gd += sc.player2_games - sc.player1_games }
+      const sc = sm.scoring; if (!sc || sc.status !== 'complete') continue
+      const aWon = sc.player1_games > sc.player2_games
+      if (sA) { sA.rW += aWon ? 1:0; sA.rL += aWon ? 0:1; sA.gW += sc.player1_games; sA.gL += sc.player2_games }
+      if (sB) { sB.rW += aWon ? 0:1; sB.rL += aWon ? 1:0; sB.gW += sc.player2_games; sB.gL += sc.player1_games }
     }
   }
 
-  return [...map.values()].sort((a, b) => b.mW - a.mW || b.smW - a.smW || b.gd - a.gd)
+  const ratio = (w: number, l: number) => (w + l === 0 ? 0 : w / (w + l))
+  return [...map.values()].sort((a, b) => {
+    if (b.mW !== a.mW) return b.mW - a.mW
+    const rr = ratio(b.rW, b.rL) - ratio(a.rW, a.rL); if (Math.abs(rr) > 1e-9) return rr
+    const gr = ratio(b.gW, b.gL) - ratio(a.gW, a.gL); if (Math.abs(gr) > 1e-9) return gr
+    const bH = h2h.get(b.teamId)?.get(a.teamId) ?? 0
+    const aH = h2h.get(a.teamId)?.get(b.teamId) ?? 0
+    return bH - aH
+  })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -898,6 +922,374 @@ function TeamsTab({ tournament, teams, teamMatches, stage, loadData, isPending, 
 // GroupsTab — configure groups, show standings + fixtures
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+// RubberScorer — inline game-score entry for one rubber
+// ─────────────────────────────────────────────────────────────────────────────
+
+type GameLocal = { s1: string; s2: string }
+
+function RubberScorer({
+  submatch, teamA, teamB, isCorbillon, tournamentId, matchFormat, onSaved,
+}: {
+  submatch:    Submatch
+  teamA:       TeamWithPlayers | null
+  teamB:       TeamWithPlayers | null
+  isCorbillon: boolean
+  tournamentId: string
+  matchFormat: MatchFormat
+  onSaved:     () => void
+}) {
+  const supabase = createClient()
+  const [games,       setGames]   = useState<Array<{id:string;game_number:number;score1:number;score2:number}>>([])
+  const [localScores, setLocal]   = useState<Record<number, GameLocal>>({})
+  const [saving,      setSaving]  = useState(false)
+  const [loadingG,    setLoadingG] = useState(true)
+  const scoring = submatch.scoring
+
+  // Is this rubber a doubles rubber? (order 3 in Corbillon)
+  const isDbl = isCorbillon && submatch.match_order === 3
+
+  useEffect(() => {
+    if (!submatch.match_id) { setLoadingG(false); return }
+    supabase.from('games').select('*').eq('match_id', submatch.match_id)
+      .order('game_number')
+      .then(({ data }) => {
+        const gs = data ?? []
+        setGames(gs)
+        const init: Record<number, GameLocal> = {}
+        for (const g of gs) init[g.game_number] = { s1: String(g.score1??''), s2: String(g.score2??'') }
+        setLocal(init)
+        setLoadingG(false)
+      })
+  }, [submatch.match_id])
+
+  const maxGames = matchFormat === 'bo3' ? 3 : matchFormat === 'bo7' ? 7 : 5
+
+  // Determine which games to show: always show at least enough for a result
+  const completed = scoring?.player1_games ?? 0
+  const p2Wins    = scoring?.player2_games ?? 0
+  const winsNeeded = Math.ceil(maxGames / 2)
+  const gamesPlayed = games.length
+  const numSlots = Math.max(winsNeeded + 1, gamesPlayed + 1, 3)
+
+  const handleScore = (gn: number, field: 'a' | 'b', val: string) => {
+    setLocal(prev => ({ ...prev, [gn]: { ...prev[gn] ?? { s1:'', s2:'' }, [field === 'a' ? 's1' : 's2']: val } }))
+  }
+
+  const handleSave = async () => {
+    if (!submatch.match_id) return
+    setSaving(true)
+    for (const [gnStr, sc] of Object.entries(localScores)) {
+      const gn = Number(gnStr)
+      const s1 = parseInt(sc.s1, 10), s2 = parseInt(sc.s2, 10)
+      if (isNaN(s1) || isNaN(s2) || (s1 === 0 && s2 === 0)) continue
+      const res = await saveGameScore(submatch.match_id, gn, s1, s2)
+      if (!res.success) { toast({ title: res.error, variant: 'destructive' }); setSaving(false); return }
+    }
+    toast({ title: 'Rubber scores saved', variant: 'success' })
+    setSaving(false)
+    onSaved()
+  }
+
+  const handleDeclareWinner = async (winnerId: 'player1' | 'player2') => {
+    if (!submatch.match_id) return
+    setSaving(true)
+    // Use null as player IDs for team submatches — declareMatchWinner accepts 'TEAM_A'/'TEAM_B' sentinels
+    const res = await declareMatchWinner(submatch.match_id, winnerId === 'player1' ? 'TEAM_A' : 'TEAM_B', tournamentId)
+    setSaving(false)
+    if (res && (res as {error?:string}).error) { toast({ title: (res as {error:string}).error, variant: 'destructive' }); return }
+    toast({ title: 'Rubber result saved', variant: 'success' })
+    onSaved()
+  }
+
+  if (loadingG) return <div className="text-xs text-muted-foreground py-2 px-3">Loading…</div>
+
+  const isComplete = scoring?.status === 'complete'
+
+  return (
+    <div className="mt-2 rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-3">
+      {/* Score grid */}
+      <div className="flex flex-col gap-1.5">
+        <div className="grid gap-1" style={{ gridTemplateColumns: `auto repeat(${Math.min(numSlots, maxGames)}, 1fr)` }}>
+          <div className="text-xs font-semibold text-muted-foreground py-1 pr-2">Game</div>
+          {Array.from({ length: Math.min(numSlots, maxGames) }, (_, i) => (
+            <div key={i} className="text-xs text-center font-mono text-muted-foreground">{i+1}</div>
+          ))}
+          {/* Team A row */}
+          <div className="text-xs font-medium py-1 pr-2 truncate">{teamA?.name ?? 'Team A'}</div>
+          {Array.from({ length: Math.min(numSlots, maxGames) }, (_, i) => {
+            const gn = i + 1
+            return (
+              <input key={gn} type="number" min={0} max={99}
+                value={localScores[gn]?.s1 ?? ''}
+                onChange={e => handleScore(gn, 'a', e.target.value)}
+                disabled={isComplete || saving}
+                className="w-full text-center text-sm py-1 rounded border border-border bg-background focus:outline-none focus:ring-1 focus:ring-orange-500/50 disabled:opacity-50"
+              />
+            )
+          })}
+          {/* Team B row */}
+          <div className="text-xs font-medium py-1 pr-2 truncate">{teamB?.name ?? 'Team B'}</div>
+          {Array.from({ length: Math.min(numSlots, maxGames) }, (_, i) => {
+            const gn = i + 1
+            return (
+              <input key={gn} type="number" min={0} max={99}
+                value={localScores[gn]?.s2 ?? ''}
+                onChange={e => handleScore(gn, 'b', e.target.value)}
+                disabled={isComplete || saving}
+                className="w-full text-center text-sm py-1 rounded border border-border bg-background focus:outline-none focus:ring-1 focus:ring-orange-500/50 disabled:opacity-50"
+              />
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Result + actions */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {isComplete ? (
+          <div className="flex items-center gap-1.5 text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+            <Check className="h-3.5 w-3.5" />
+            {completed > p2Wins ? (teamA?.name ?? 'A') : (teamB?.name ?? 'B')} wins {completed}–{p2Wins}
+          </div>
+        ) : (
+          <>
+            <Button size="sm" onClick={handleSave} disabled={saving} className="gap-1.5 h-7 text-xs">
+              {saving ? <span className="tt-spinner tt-spinner-sm" /> : <Check className="h-3 w-3" />}
+              Save Scores
+            </Button>
+            <span className="text-xs text-muted-foreground">or declare:</span>
+            <Button size="sm" variant="outline" onClick={() => handleDeclareWinner('player1')} disabled={saving}
+              className="h-7 text-xs gap-1">
+              <Trophy className="h-3 w-3" /> {teamA?.name ?? 'Team A'} wins
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => handleDeclareWinner('player2')} disabled={saving}
+              className="h-7 text-xs gap-1">
+              <Trophy className="h-3 w-3" /> {teamB?.name ?? 'Team B'} wins
+            </Button>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LineupEditor — player selectors for one rubber
+// ─────────────────────────────────────────────────────────────────────────────
+
+function LineupEditor({
+  submatch, teamA, teamB, isCorbillon,
+  onChange,
+}: {
+  submatch:    Submatch
+  teamA:       TeamWithPlayers | null
+  teamB:       TeamWithPlayers | null
+  isCorbillon: boolean
+  onChange:    (aId: string|null, bId: string|null, a2Id?: string|null, b2Id?: string|null) => void
+}) {
+  const isDbl = isCorbillon && submatch.match_order === 3
+
+  const [aId,  setAId]  = useState<string>(submatch.team_a_player_id ?? '')
+  const [bId,  setBId]  = useState<string>(submatch.team_b_player_id ?? '')
+  const [a2Id, setA2Id] = useState<string>(submatch.team_a_player2_id ?? '')
+  const [b2Id, setB2Id] = useState<string>(submatch.team_b_player2_id ?? '')
+
+  useEffect(() => {
+    onChange(aId||null, bId||null, isDbl ? (a2Id||null) : undefined, isDbl ? (b2Id||null) : undefined)
+  }, [aId, bId, a2Id, b2Id])
+
+  const aPlayers = teamA?.players ?? []
+  const bPlayers = teamB?.players ?? []
+  const sel = 'px-2 py-1.5 rounded border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-orange-500/50 w-full'
+
+  return (
+    <div className="grid grid-cols-2 gap-2 mt-1.5">
+      <div className="flex flex-col gap-1">
+        <span className="text-[10px] font-semibold text-muted-foreground uppercase">{teamA?.name ?? 'Team A'}</span>
+        <select value={aId} onChange={e => setAId(e.target.value)} className={sel}>
+          <option value="">— select —</option>
+          {aPlayers.map(p => <option key={p.id} value={p.id}>{p.position}. {p.name}</option>)}
+        </select>
+        {isDbl && (
+          <select value={a2Id} onChange={e => setA2Id(e.target.value)} className={sel}>
+            <option value="">— partner —</option>
+            {aPlayers.filter(p => p.id !== aId).map(p => <option key={p.id} value={p.id}>{p.position}. {p.name}</option>)}
+          </select>
+        )}
+      </div>
+      <div className="flex flex-col gap-1">
+        <span className="text-[10px] font-semibold text-muted-foreground uppercase">{teamB?.name ?? 'Team B'}</span>
+        <select value={bId} onChange={e => setBId(e.target.value)} className={sel}>
+          <option value="">— select —</option>
+          {bPlayers.map(p => <option key={p.id} value={p.id}>{p.position}. {p.name}</option>)}
+        </select>
+        {isDbl && (
+          <select value={b2Id} onChange={e => setB2Id(e.target.value)} className={sel}>
+            <option value="">— partner —</option>
+            {bPlayers.filter(p => p.id !== bId).map(p => <option key={p.id} value={p.id}>{p.position}. {p.name}</option>)}
+          </select>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FixtureDetailPanel — inline expandable match entry for group/KO fixtures
+// ─────────────────────────────────────────────────────────────────────────────
+
+function FixtureDetailPanel({
+  match, isCorbillon, tournament, loadData,
+}: {
+  match:       TeamMatchRich
+  isCorbillon: boolean
+  tournament:  { id: string; format: string }
+  loadData:    () => void
+}) {
+  const [expandedRubber, setExpandedRubber] = useState<string | null>(null)
+  const [lineupEdits,    setLineupEdits]    = useState<Map<string, [string|null,string|null,string|null|undefined,string|null|undefined]>>(new Map())
+  const [savingLineup,   setSavingLineup]   = useState(false)
+  const [lineupDirty,    setLineupDirty]    = useState(false)
+
+  const teamA  = match.team_a
+  const teamB  = match.team_b
+  const isLocked = match.status === 'complete'
+  const format = (tournament.format ?? 'bo5') as MatchFormat
+
+  const handleLineupChange = (smId: string, a: string|null, b: string|null, a2?: string|null, b2?: string|null) => {
+    setLineupEdits(prev => { const m = new Map(prev); m.set(smId, [a, b, a2, b2]); return m })
+    setLineupDirty(true)
+  }
+
+  const handleSaveLineup = async () => {
+    setSavingLineup(true)
+    const submatches = match.submatches.map(sm => {
+      const edit = lineupEdits.get(sm.id)
+      return {
+        submatchId:      sm.id,
+        teamAPlayerId:   edit ? edit[0] : sm.team_a_player_id,
+        teamBPlayerId:   edit ? edit[1] : sm.team_b_player_id,
+        teamAPlayer2Id:  edit ? edit[2] : sm.team_a_player2_id,
+        teamBPlayer2Id:  edit ? edit[3] : sm.team_b_player2_id,
+      }
+    })
+    const res = await batchUpdateSubmatchPlayers({ tournamentId: tournament.id, submatches })
+    setSavingLineup(false)
+    if (res.error) { toast({ title: res.error, variant: 'destructive' }); return }
+    setLineupDirty(false)
+    toast({ title: 'Lineup saved', variant: 'success' })
+    loadData()
+  }
+
+  return (
+    <div className="flex flex-col gap-0 pt-1">
+      {/* Team score strip */}
+      <div className="flex items-center justify-between px-1 py-2 mb-2">
+        <div className="flex items-center gap-2">
+          <div className="h-2 w-2 rounded-full" style={{ backgroundColor: teamA?.color ?? '#888' }} />
+          <span className="text-sm font-semibold">{teamA?.name ?? '?'}</span>
+        </div>
+        <span className="text-lg font-bold font-mono tabular-nums">
+          {match.team_a_score} – {match.team_b_score}
+        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold">{teamB?.name ?? '?'}</span>
+          <div className="h-2 w-2 rounded-full" style={{ backgroundColor: teamB?.color ?? '#888' }} />
+        </div>
+      </div>
+
+      {/* Lineup save button */}
+      {lineupDirty && !isLocked && (
+        <div className="flex justify-end mb-3">
+          <Button size="sm" onClick={handleSaveLineup} disabled={savingLineup}
+            className="gap-1.5 h-7 text-xs">
+            {savingLineup ? <span className="tt-spinner tt-spinner-sm" /> : <Check className="h-3 w-3" />}
+            Save Lineup
+          </Button>
+        </div>
+      )}
+
+      {/* Rubber rows */}
+      <div className="flex flex-col divide-y divide-border/40">
+        {match.submatches.map((sm, idx) => {
+          const sc         = sm.scoring
+          const isRubberDone = sc?.status === 'complete'
+          const aWon       = isRubberDone && sc!.player1_games > sc!.player2_games
+          const bWon       = isRubberDone && sc!.player2_games > sc!.player1_games
+          const isExpanded = expandedRubber === sm.id
+
+          return (
+            <div key={sm.id} className="py-2.5">
+              {/* Rubber header (clickable) */}
+              <button
+                onClick={() => setExpandedRubber(isExpanded ? null : sm.id)}
+                className="w-full flex items-center gap-2 text-left group"
+              >
+                {/* Rubber number */}
+                <span className={cn(
+                  'flex-none text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center',
+                  isRubberDone ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300' : 'bg-muted text-muted-foreground'
+                )}>{idx + 1}</span>
+
+                {/* Label */}
+                <span className="text-xs font-medium text-muted-foreground flex-1">{sm.label}</span>
+
+                {/* Players */}
+                <span className="text-xs text-muted-foreground hidden sm:block">
+                  {sm.player_a_name ?? '?'} <span className="opacity-40">vs</span> {sm.player_b_name ?? '?'}
+                </span>
+
+                {/* Result or score */}
+                {isRubberDone ? (
+                  <span className="text-xs font-semibold font-mono shrink-0">
+                    <span className={cn(aWon ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/50')}>{sc!.player1_games}</span>
+                    <span className="text-muted-foreground mx-0.5">–</span>
+                    <span className={cn(bWon ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/50')}>{sc!.player2_games}</span>
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-muted-foreground/40 shrink-0">pending</span>
+                )}
+
+                <ChevronDown className={cn('h-3.5 w-3.5 text-muted-foreground transition-transform shrink-0', isExpanded && 'rotate-180')} />
+              </button>
+
+              {/* Expanded content */}
+              {isExpanded && (
+                <div className="mt-2">
+                  {/* Lineup editor */}
+                  {!isLocked && (
+                    <LineupEditor
+                      submatch={sm}
+                      teamA={teamA}
+                      teamB={teamB}
+                      isCorbillon={isCorbillon}
+                      onChange={(a, b, a2, b2) => handleLineupChange(sm.id, a, b, a2, b2)}
+                    />
+                  )}
+                  {/* Score entry */}
+                  <RubberScorer
+                    submatch={sm}
+                    teamA={teamA}
+                    teamB={teamB}
+                    isCorbillon={isCorbillon}
+                    tournamentId={tournament.id}
+                    matchFormat={format}
+                    onSaved={loadData}
+                  />
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GroupsTab — configure groups, assign teams, show fixtures + inline scoring
+// ─────────────────────────────────────────────────────────────────────────────
+
 function GroupsTab({
   tournament, teams, groups, stage, teamMatches, rrMatches, matchBase,
   loadData, isPending, startTransition, setLoading, router,
@@ -921,34 +1313,44 @@ function GroupsTab({
   onNext:          () => void
   isCorbillon:     boolean
 }) {
-  const [numGroups,     setNumGroups]     = useState(2)
-  const [advanceCount,  setAdvanceCount]  = useState(1)
-  const [expandedGroup, setExpandedGroup] = useState<string | null>(null)
+  // ── Group config mode ──────────────────────────────────────────────────────
+  const [configMode, setConfigMode] = useState<'numGroups' | 'perGroup'>('numGroups')
+  const [numGroups,    setNumGroups]    = useState(2)
+  const [teamsPerGroup, setTeamsPerGroup] = useState(4)
+  const [advanceCount, setAdvanceCount]  = useState(2)
+  const [expandedGroup,  setExpandedGroup]  = useState<string | null>(null)
+  const [expandedMatch,  setExpandedMatch]  = useState<string | null>(null)
 
   const formatType   = tournament.format_type ?? 'team_group_corbillon'
-  const layout       = computeGroupLayout(teams.length, Math.ceil(teams.length / numGroups))
-  const canCreate    = teams.length >= 2 && !stage
+  const numTeams     = teams.length
+  const N            = configMode === 'numGroups' ? numGroups : Math.max(1, Math.floor(numTeams / Math.max(1, teamsPerGroup)))
+  const layout       = computeGroupLayout(numTeams, Math.ceil(numTeams / Math.max(1, N)))
+  const canCreate    = numTeams >= 2 && !stage
   const canGenerate  = !!stage && groups.every(g => g.teamIds.length >= 2) && !fixturesExist
   const canFinalize  = allRRDone && !koExists
   const groupsAssigned = groups.length > 0 && groups.every(g => g.teamIds.length >= 2)
+
+  // Snake preview
+  const seeded   = [...teams].filter(t => t.seed != null).sort((a, b) => (a.seed ?? 0) - (b.seed ?? 0))
+  const unseeded = [...teams].filter(t => t.seed == null)
+  const ordered  = [...seeded, ...unseeded]
+  const preview  = layout.numGroups > 0 ? snakeAssign(ordered, layout.numGroups) : []
 
   const teamById = new Map(teams.map(t => [t.id, t]))
 
   const handleCreateStage = () => {
     startTransition(async () => {
+      const G = configMode === 'numGroups' ? numGroups : layout.numGroups
       const res = await createTeamRRStage({
         tournamentId:   tournament.id,
-        numberOfGroups: numGroups,
+        numberOfGroups: G,
         advanceCount,
         matchFormat:    'bo5',
       })
       if (res.error) { toast({ title: res.error, variant: 'warning' }); return }
-
-      // Auto-assign teams to groups
       const r2 = await generateTeamGroups(res.stageId!, tournament.id)
       if (r2.error) { toast({ title: r2.error, variant: 'warning' }); return }
-
-      toast({ title: `${numGroups} groups created.`, variant: 'success' })
+      toast({ title: `${G} groups created & teams assigned.`, variant: 'success' })
       await loadData(); router.refresh()
     })
   }
@@ -965,8 +1367,10 @@ function GroupsTab({
 
   const handleGenerateFixtures = () => {
     if (!stage) return
+    setLoading(true)
     startTransition(async () => {
       const res = await generateTeamGroupFixtures(stage.id, tournament.id, formatType)
+      setLoading(false)
       if (res.error) { toast({ title: res.error, variant: 'warning' }); return }
       toast({ title: `${res.fixtureCount} group fixtures generated.`, variant: 'success' })
       await loadData(); router.refresh()
@@ -990,52 +1394,108 @@ function GroupsTab({
     <div className="flex flex-col gap-6">
       <h2 className="text-lg font-semibold">Group Stage</h2>
 
-      {/* Step 1: Configure groups */}
+      {/* ── Step 1: Configure groups (only before stage created) ── */}
       {!stage && (
         <Card>
           <CardHeader><CardTitle className="text-base">Configure Groups</CardTitle></CardHeader>
-          <CardContent className="flex flex-col gap-4">
+          <CardContent className="flex flex-col gap-5">
             <p className="text-sm text-muted-foreground">
-              Teams: <strong>{teams.length}</strong>
+              <strong>{numTeams}</strong> teams · Snake seeding distributes seeds evenly across groups.
             </p>
 
-            <div className="grid grid-cols-2 gap-4 max-w-sm">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                  Number of Groups
-                </label>
-                <input
-                  type="number" min={1} max={Math.floor(teams.length / 2)}
-                  value={numGroups}
-                  onChange={e => setNumGroups(Math.max(1, parseInt(e.target.value) || 1))}
-                  className={cn(inputCls, 'w-24')}
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                  Advance Per Group
-                </label>
-                <input
-                  type="number" min={1}
-                  value={advanceCount}
-                  onChange={e => setAdvanceCount(Math.max(1, parseInt(e.target.value) || 1))}
-                  className={cn(inputCls, 'w-24')}
-                />
+            {/* Mode toggle */}
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Define groups by</p>
+              <div className="flex gap-1 p-1 bg-muted rounded-lg w-fit">
+                {(['numGroups', 'perGroup'] as const).map(m => (
+                  <button key={m} onClick={() => setConfigMode(m)}
+                    className={cn('px-3 py-1.5 rounded-md text-xs font-semibold transition-colors',
+                      configMode === m ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}>
+                    {m === 'numGroups' ? '# of groups' : 'Teams per group'}
+                  </button>
+                ))}
               </div>
             </div>
 
-            {/* Preview */}
-            {teams.length >= 2 && (
+            <div className="flex flex-wrap gap-4 items-end">
+              {configMode === 'numGroups' ? (
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Number of groups</label>
+                  <input type="number" min={1} max={Math.max(1, Math.floor(numTeams / 2))}
+                    value={numGroups} onChange={e => setNumGroups(Math.max(1, parseInt(e.target.value) || 1))}
+                    className={cn(inputCls, 'w-24')} />
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Teams per group</label>
+                  <input type="number" min={2} max={numTeams}
+                    value={teamsPerGroup} onChange={e => setTeamsPerGroup(Math.max(2, parseInt(e.target.value) || 2))}
+                    className={cn(inputCls, 'w-24')} />
+                </div>
+              )}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Advance per group</label>
+                <input type="number" min={1}
+                  value={advanceCount} onChange={e => setAdvanceCount(Math.max(1, parseInt(e.target.value) || 1))}
+                  className={cn(inputCls, 'w-24')} />
+              </div>
+            </div>
+
+            {/* Layout preview text */}
+            {numTeams >= 2 && (
               <p className="text-sm text-muted-foreground">
-                Preview: {groupLayoutSummary(layout)}
+                Layout: <strong>{groupLayoutSummary(layout)}</strong>
+                {advanceCount > 0 && ` · Top ${advanceCount} advance → ${layout.numGroups * advanceCount} in KO bracket`}
               </p>
             )}
 
-            <Button
-              size="sm" onClick={handleCreateStage}
-              disabled={isPending || !canCreate || teams.length < 2}
-              className="gap-1.5 self-start"
-            >
+            {/* Snake distribution preview */}
+            {numTeams >= 2 && preview.length > 0 && (
+              <div className="rounded-lg border border-border overflow-hidden">
+                <div className="bg-muted/60 px-3 py-2 text-xs font-semibold text-muted-foreground">
+                  Snake seeding preview
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead className="bg-background border-b border-border">
+                      <tr>
+                        {preview.map((_, gi) => (
+                          <th key={gi} className="text-left px-3 py-1.5 font-semibold text-muted-foreground">
+                            Group {gi + 1}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Array.from({ length: Math.max(...preview.map(g => g.length)) }, (_, ri) => (
+                        <tr key={ri} className={ri % 2 === 0 ? '' : 'bg-muted/20'}>
+                          {preview.map((grp, gi) => {
+                            const t = grp[ri]
+                            return (
+                              <td key={gi} className="px-3 py-1.5">
+                                {t ? (
+                                  <div className="flex items-center gap-1.5">
+                                    {t.seed != null && (
+                                      <span className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 text-[9px] font-bold">
+                                        {t.seed}
+                                      </span>
+                                    )}
+                                    <span className="font-medium">{t.name}</span>
+                                  </div>
+                                ) : null}
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            <Button size="sm" onClick={handleCreateStage}
+              disabled={isPending || !canCreate || numTeams < 2} className="gap-1.5 self-start">
               <PlayCircle className="h-3.5 w-3.5" />
               Create Groups &amp; Assign Teams
             </Button>
@@ -1043,22 +1503,19 @@ function GroupsTab({
         </Card>
       )}
 
-      {/* Stage exists: show groups */}
+      {/* ── Stage exists ── */}
       {stage && (
         <div className="flex flex-col gap-4">
           {/* Config summary */}
           <div className="flex items-center gap-3 text-sm text-muted-foreground flex-wrap">
-            <span>{groups.length} groups</span>
+            <span>{groups.length} group{groups.length !== 1 ? 's' : ''}</span>
             <span>·</span>
             <span>Top {stage.config.advanceCount} advance per group</span>
             {!fixturesExist && (
               <>
                 <span>·</span>
-                <button
-                  onClick={handleRegenerateGroups}
-                  disabled={isPending}
-                  className="text-orange-500 hover:text-orange-400 transition-colors text-xs font-medium"
-                >
+                <button onClick={handleRegenerateGroups} disabled={isPending}
+                  className="text-orange-500 hover:text-orange-400 transition-colors text-xs font-medium">
                   Re-assign teams
                 </button>
               </>
@@ -1067,84 +1524,137 @@ function GroupsTab({
 
           {/* Groups */}
           {groups.map(group => {
-            const groupTeams    = group.teamIds.map(id => teamById.get(id)).filter(Boolean) as TeamWithPlayers[]
-            const groupMatches  = rrMatches.filter(m => m.group_id === group.id)
-            const standings     = computeStandings(group.id, group.teamIds, teamMatches)
-            const isExpanded    = expandedGroup === group.id
-            const allDone       = groupMatches.length > 0 && groupMatches.every(m => m.status === 'complete')
+            const groupTeams   = group.teamIds.map(id => teamById.get(id)).filter(Boolean) as TeamWithPlayers[]
+            const groupMatches = rrMatches.filter(m => m.group_id === group.id)
+            const standings    = computeStandings(group.id, group.teamIds, teamMatches)
+            const isExpanded   = expandedGroup === group.id
+            const allDone      = groupMatches.length > 0 && groupMatches.every(m => m.status === 'complete')
 
             return (
-              <Card key={group.id} className={cn(allDone ? 'bg-muted/20 border-border/40' : '')}>
+              <Card key={group.id} className={cn(allDone && 'bg-muted/20 border-border/40')}>
                 <CardHeader className="py-3">
-                  <button
-                    className="flex items-center justify-between w-full text-left"
-                    onClick={() => setExpandedGroup(isExpanded ? null : group.id)}
-                  >
+                  <button className="flex items-center justify-between w-full text-left"
+                    onClick={() => setExpandedGroup(isExpanded ? null : group.id)}>
                     <div className="flex items-center gap-2">
-                      {isExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                      {isExpanded
+                        ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
                       <span className="font-semibold text-sm">{group.name}</span>
-                      <span className="text-xs text-muted-foreground">
+                      <span className="text-xs text-muted-foreground hidden sm:inline">
                         {groupTeams.map(t => t.name).join(', ')}
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
                       {allDone && <Check className="h-4 w-4 text-emerald-500" />}
                       <span className="text-xs text-muted-foreground">
-                        {groupMatches.filter(m => m.status === 'complete').length}/{groupMatches.length} done
+                        {groupMatches.filter(m => m.status === 'complete').length}/{groupMatches.length}
                       </span>
                     </div>
                   </button>
                 </CardHeader>
 
                 {isExpanded && (
-                  <CardContent className="flex flex-col gap-4 pt-0">
-                    {/* Standings table */}
+                  <CardContent className="flex flex-col gap-5 pt-0">
+
+                    {/* Standings table (ITTF columns) */}
                     {groupMatches.length > 0 && (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="text-xs text-muted-foreground border-b border-border">
-                              <th className="text-left py-1.5 font-medium w-6">#</th>
-                              <th className="text-left py-1.5 font-medium">Team</th>
-                              <th className="text-center py-1.5 font-medium w-10">MW</th>
-                              <th className="text-center py-1.5 font-medium w-10">ML</th>
-                              <th className="text-center py-1.5 font-medium w-12">Ties</th>
-                              <th className="text-center py-1.5 font-medium w-12">GD</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {standings.map((row, idx) => {
-                              const t = teamById.get(row.teamId)
-                              const isAdvancing = idx < stage.config.advanceCount
-                              return (
-                                <tr key={row.teamId} className={cn('border-b border-border/50', isAdvancing && 'bg-emerald-50/50 dark:bg-emerald-950/20')}>
-                                  <td className="py-1.5 text-xs text-muted-foreground">{idx + 1}</td>
-                                  <td className="py-1.5">
-                                    <div className="flex items-center gap-1.5">
-                                      <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: t?.color ?? '#888' }} />
-                                      <span className="font-medium truncate">{t?.name ?? '?'}</span>
-                                      {isAdvancing && <ArrowRight className="h-3 w-3 text-emerald-500 shrink-0" />}
-                                    </div>
-                                  </td>
-                                  <td className="py-1.5 text-center font-mono">{row.mW}</td>
-                                  <td className="py-1.5 text-center font-mono text-muted-foreground">{row.mL}</td>
-                                  <td className="py-1.5 text-center font-mono">{row.smW}</td>
-                                  <td className="py-1.5 text-center font-mono">{row.gd > 0 ? `+${row.gd}` : row.gd}</td>
-                                </tr>
-                              )
-                            })}
-                          </tbody>
-                        </table>
+                      <div>
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Standings</p>
+                        <div className="overflow-x-auto rounded-lg border border-border">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="text-xs text-muted-foreground bg-muted/40 border-b border-border">
+                                <th className="text-left py-1.5 px-2 font-medium w-6">#</th>
+                                <th className="text-left py-1.5 px-2 font-medium">Team</th>
+                                <th className="text-center py-1.5 px-1 font-medium w-8" title="Tie wins">TW</th>
+                                <th className="text-center py-1.5 px-1 font-medium w-8" title="Tie losses">TL</th>
+                                <th className="text-center py-1.5 px-1 font-medium w-8" title="Rubber wins">RW</th>
+                                <th className="text-center py-1.5 px-1 font-medium w-8" title="Rubber losses">RL</th>
+                                <th className="text-center py-1.5 px-1 font-medium w-8" title="Game wins">GW</th>
+                                <th className="text-center py-1.5 px-1 font-medium w-8" title="Game losses">GL</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {standings.map((row, idx) => {
+                                const t = teamById.get(row.teamId)
+                                const isAdv = idx < stage.config.advanceCount
+                                return (
+                                  <tr key={row.teamId}
+                                    className={cn('border-b border-border/40 last:border-0', isAdv && 'bg-emerald-50/40 dark:bg-emerald-950/20')}>
+                                    <td className="py-1.5 px-2 text-xs text-muted-foreground">{idx + 1}</td>
+                                    <td className="py-1.5 px-2">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: t?.color ?? '#888' }} />
+                                        <span className="font-medium truncate max-w-[120px]">{t?.name ?? '?'}</span>
+                                        {isAdv && <ArrowRight className="h-3 w-3 text-emerald-500 shrink-0" />}
+                                      </div>
+                                    </td>
+                                    <td className="py-1.5 px-1 text-center font-mono text-xs font-semibold">{row.mW}</td>
+                                    <td className="py-1.5 px-1 text-center font-mono text-xs text-muted-foreground">{row.mL}</td>
+                                    <td className="py-1.5 px-1 text-center font-mono text-xs">{row.rW}</td>
+                                    <td className="py-1.5 px-1 text-center font-mono text-xs text-muted-foreground">{row.rL}</td>
+                                    <td className="py-1.5 px-1 text-center font-mono text-xs">{row.gW}</td>
+                                    <td className="py-1.5 px-1 text-center font-mono text-xs text-muted-foreground">{row.gL}</td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                          <p className="text-[10px] text-muted-foreground px-2 py-1.5 border-t border-border/40">
+                            TW/TL = Tie wins/losses · RW/RL = Rubber wins/losses · GW/GL = Game wins/losses
+                            {stage.config.advanceCount > 0 && ` · ↗ Top ${stage.config.advanceCount} advance`}
+                          </p>
+                        </div>
                       </div>
                     )}
 
-                    {/* Fixtures */}
+                    {/* Fixtures with inline scoring */}
                     {groupMatches.length > 0 && (
-                      <div className="flex flex-col gap-2">
-                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Fixtures</h4>
-                        {groupMatches.map(m => (
-                          <GroupFixtureCard key={m.id} match={m} matchBase={matchBase} />
-                        ))}
+                      <div>
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Fixtures</p>
+                        <div className="flex flex-col gap-2">
+                          {groupMatches.map(m => {
+                            const isExpM     = expandedMatch === m.id
+                            const isComplete = m.status === 'complete'
+                            const doneCount  = m.submatches.filter(s => s.scoring?.status === 'complete').length
+
+                            return (
+                              <Card key={m.id} className={cn('overflow-hidden', matchStatusClasses(m.status))}>
+                                <CardContent className="pt-3 pb-3">
+                                  {/* Fixture header (clickable) */}
+                                  <button className="w-full flex items-center gap-2 text-left"
+                                    onClick={() => setExpandedMatch(isExpM ? null : m.id)}>
+                                    <div className="flex-1 min-w-0 flex items-center gap-2 text-sm">
+                                      <WinnerTrophy show={isComplete && m.winner_team_id === m.team_a_id} />
+                                      <span className={cn('font-medium truncate', isComplete && m.winner_team_id !== m.team_a_id && 'text-muted-foreground')}>
+                                        {m.team_a?.name ?? '—'}
+                                      </span>
+                                      <span className="font-mono font-bold text-sm shrink-0">{m.team_a_score}–{m.team_b_score}</span>
+                                      <WinnerTrophy show={isComplete && m.winner_team_id === m.team_b_id} />
+                                      <span className={cn('font-medium truncate', isComplete && m.winner_team_id !== m.team_b_id && 'text-muted-foreground')}>
+                                        {m.team_b?.name ?? '—'}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <span className="text-xs text-muted-foreground">{doneCount}/{m.submatches.length}</span>
+                                      <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform', isExpM && 'rotate-180')} />
+                                    </div>
+                                  </button>
+
+                                  {/* Inline rubber entry */}
+                                  {isExpM && (
+                                    <FixtureDetailPanel
+                                      match={m}
+                                      isCorbillon={isCorbillon}
+                                      tournament={tournament}
+                                      loadData={() => loadData(true)}
+                                    />
+                                  )}
+                                </CardContent>
+                              </Card>
+                            )
+                          })}
+                        </div>
                       </div>
                     )}
 
@@ -1166,7 +1676,7 @@ function GroupsTab({
             </Button>
           )}
 
-          {/* Finalize banner */}
+          {/* Finalize / proceed */}
           {fixturesExist && !koExists && (
             <NextStepBanner
               variant={allRRDone ? 'action' : 'info'}
@@ -1178,8 +1688,7 @@ function GroupsTab({
           )}
 
           {koExists && (
-            <NextStepBanner
-              variant="action"
+            <NextStepBanner variant="action"
               title="KO bracket generated. View in the Knockout tab."
               onClick={onNext}
             />
@@ -1189,6 +1698,7 @@ function GroupsTab({
     </div>
   )
 }
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GroupFixtureCard — compact read-only fixture card for group view
@@ -1266,6 +1776,8 @@ function KnockoutTab({ tournament, teams, koMatches, matchBase, loadData, isCorb
   isCorbillon: boolean
   formatLabel: string
 }) {
+  const [expandedKO, setExpandedKO] = useState<string | null>(null)
+
   if (koMatches.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
@@ -1302,44 +1814,43 @@ function KnockoutTab({ tournament, teams, koMatches, matchBase, loadData, isCorb
                 const isLive     = m.status === 'live'
                 const doneCount  = m.submatches.filter(s => s.scoring?.status === 'complete').length
                 const firstPending = m.submatches.find(s => s.scoring?.status !== 'complete')
-                const href = firstPending?.match_id ? `${matchBase}/${firstPending.match_id}` : null
+                void firstPending // kept for future use
 
                 return (
                   <Card key={m.id} className={cn(matchStatusClasses(m.status), 'overflow-hidden')}>
-                    <CardContent className="pt-3 pb-3 flex flex-col gap-2">
-                      {/* Team A */}
-                      <div className={cn('flex items-center gap-2', isComplete && m.winner_team_id !== m.team_a_id && 'opacity-50')}>
-                        <WinnerTrophy show={isComplete && m.winner_team_id === m.team_a_id} />
-                        <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: m.team_a?.color ?? '#888' }} />
-                        <span className="text-sm font-semibold flex-1 truncate">{m.team_a?.name ?? 'TBD'}</span>
-                        <span className="text-sm font-bold font-mono">{m.team_a_score}</span>
-                      </div>
-                      <div className="border-t border-border/40 my-0.5" />
-                      {/* Team B */}
-                      <div className={cn('flex items-center gap-2', isComplete && m.winner_team_id !== m.team_b_id && 'opacity-50')}>
-                        <WinnerTrophy show={isComplete && m.winner_team_id === m.team_b_id} />
-                        <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: m.team_b?.color ?? '#888' }} />
-                        <span className="text-sm font-semibold flex-1 truncate">{m.team_b?.name ?? 'TBD'}</span>
-                        <span className="text-sm font-bold font-mono">{m.team_b_score}</span>
-                      </div>
-
-                      {/* Footer */}
-                      <div className="flex items-center justify-between pt-1 mt-0.5 border-t border-border/30">
-                        <div className="flex items-center gap-1.5">
-                          {isLive && (
-                            <span className="text-xs font-semibold px-1.5 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-400">LIVE</span>
-                          )}
-                          {isComplete && <span className="text-xs text-muted-foreground">Done</span>}
+                    <CardContent className="pt-3 pb-3">
+                      {/* Clickable header */}
+                      <button className="w-full flex items-center gap-2 text-left"
+                        onClick={() => setExpandedKO(expandedKO === m.id ? null : m.id)}>
+                        <div className="flex-1 flex flex-col gap-1 min-w-0">
+                          <div className={cn('flex items-center gap-2', isComplete && m.winner_team_id !== m.team_a_id && 'opacity-50')}>
+                            <WinnerTrophy show={isComplete && m.winner_team_id === m.team_a_id} />
+                            <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: m.team_a?.color ?? '#888' }} />
+                            <span className="text-sm font-semibold flex-1 truncate">{m.team_a?.name ?? 'TBD'}</span>
+                            <span className="text-sm font-bold font-mono">{m.team_a_score}</span>
+                          </div>
+                          <div className={cn('flex items-center gap-2', isComplete && m.winner_team_id !== m.team_b_id && 'opacity-50')}>
+                            <WinnerTrophy show={isComplete && m.winner_team_id === m.team_b_id} />
+                            <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: m.team_b?.color ?? '#888' }} />
+                            <span className="text-sm font-semibold flex-1 truncate">{m.team_b?.name ?? 'TBD'}</span>
+                            <span className="text-sm font-bold font-mono">{m.team_b_score}</span>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-col items-end gap-1 shrink-0">
+                          {isLive && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/40 text-orange-600">LIVE</span>}
                           <span className="text-xs text-muted-foreground">{doneCount}/{m.submatches.length}</span>
-                          {href && (
-                            <a href={href} className="text-xs font-medium text-orange-500 hover:text-orange-400 transition-colors">
-                              Score →
-                            </a>
-                          )}
+                          <ChevronDown className={cn('h-3.5 w-3.5 text-muted-foreground transition-transform', expandedKO === m.id && 'rotate-180')} />
                         </div>
-                      </div>
+                      </button>
+                      {/* Inline rubber scoring */}
+                      {expandedKO === m.id && (
+                        <FixtureDetailPanel
+                          match={m}
+                          isCorbillon={isCorbillon}
+                          tournament={tournament}
+                          loadData={() => loadData(true)}
+                        />
+                      )}
                     </CardContent>
                   </Card>
                 )

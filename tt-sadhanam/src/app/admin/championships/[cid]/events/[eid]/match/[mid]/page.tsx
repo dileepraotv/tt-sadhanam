@@ -99,8 +99,13 @@ export default async function EventMatchPage({ params, searchParams }: PageProps
   const isRRMatch    = matchKind === 'round_robin'
 
   // Fix: map each format + match kind to the correct tab name
+  const isTeamGroupKO = formatType === 'team_group_corbillon' || formatType === 'team_group_swaythling'
+
   let backTab: string
-  if (isRRMatch) {
+  if (isTeamGroupKO) {
+    // team_group formats: always go back to 'teams' tab (which hosts the full stage UI)
+    backTab = 'teams'
+  } else if (isRRMatch) {
     backTab = isSingleRR ? 'groups' : 'stage1'
   } else if (isMultiStage) {
     backTab = 'stage2'
@@ -109,7 +114,6 @@ export default async function EventMatchPage({ params, searchParams }: PageProps
   } else if (formatType === 'team_league_ko' || formatType === 'team_league_swaythling') {
     backTab = 'bracket'
   } else {
-    // single_knockout, pure_round_robin, double_elimination → all use 'stages'
     backTab = 'stages'
   }
 
@@ -140,7 +144,7 @@ export default async function EventMatchPage({ params, searchParams }: PageProps
     }
   }
 
-  const isTeamFormat = formatType === 'team_league' || formatType === 'team_league_ko' || formatType === 'team_league_swaythling'
+  const isTeamFormat = formatType === 'team_league' || formatType === 'team_league_ko' || formatType === 'team_league_swaythling' || isTeamGroupKO
   const backHref = isRRMatch
     ? `/admin/championships/${params.cid}/events/${params.eid}?tab=${backTab}&group=${groupIndex}`
     : isTeamFormat && searchParams.round

@@ -27,7 +27,7 @@
 
 import { createClient }               from '@/lib/supabase/server'
 import { revalidateTournamentPaths }  from '@/lib/actions/stages'
-import { computeGroupLayout }    from '@/lib/roundrobin/groupLayout'
+import { computeGroupLayout, snakeAssign } from '@/lib/roundrobin/groupLayout'
 import { nextPowerOf2 }          from '@/lib/utils'
 import type { MatchFormat }      from '@/lib/types'
 
@@ -128,22 +128,42 @@ type TeamMatchRow = {
   }>
 }
 
-interface TeamStanding {
-  teamId:       string
-  matchWins:    number
-  matchLosses:  number
-  submatchWins: number
-  gameDiff:     number
+export interface TeamStanding {
+  teamId:        string
+  matchWins:     number
+  matchLosses:   number
+  rubberWins:    number   // individual rubber (submatch) wins
+  rubberLosses:  number
+  gameWins:      number   // individual game wins across all rubbers
+  gameLosses:    number
+  pointsFor:     number   // total points scored (sum of all game scores for this team)
+  pointsAgainst: number
 }
 
-function computeGroupStandings(
+// ITTF tiebreak order:
+// 1. Match wins (ties won)
+// 2. Rubber W/L ratio (rubbers won ÷ rubbers played)
+// 3. Game W/L ratio   (games won ÷ games played)
+// 4. Points W/L ratio (points scored ÷ points played)
+// 5. Head-to-head (if still tied between 2 teams)
+export function computeGroupStandings(
   groupId:  string,
   teamIds:  string[],
   matches:  TeamMatchRow[],
 ): TeamStanding[] {
   const map = new Map<string, TeamStanding>(
-    teamIds.map(id => [id, { teamId: id, matchWins: 0, matchLosses: 0, submatchWins: 0, gameDiff: 0 }])
+    teamIds.map(id => [id, {
+      teamId: id,
+      matchWins: 0, matchLosses: 0,
+      rubberWins: 0, rubberLosses: 0,
+      gameWins: 0, gameLosses: 0,
+      pointsFor: 0, pointsAgainst: 0,
+    }])
   )
+
+  // Head-to-head tracker: h2h[a][b] = matches team a won against team b
+  const h2h = new Map<string, Map<string, number>>()
+  for (const id of teamIds) h2h.set(id, new Map())
 
   for (const m of matches) {
     if (m.group_id !== groupId || m.status !== 'complete') continue
@@ -151,32 +171,56 @@ function computeGroupStandings(
     const sB = map.get(m.team_b_id)
 
     if (m.winner_team_id === m.team_a_id) {
-      if (sA) { sA.matchWins++; }
-      if (sB) { sB.matchLosses++; }
+      sA && sA.matchWins++
+      sB && sB.matchLosses++
+      h2h.get(m.team_a_id)?.set(m.team_b_id, (h2h.get(m.team_a_id)?.get(m.team_b_id) ?? 0) + 1)
     } else if (m.winner_team_id === m.team_b_id) {
-      if (sB) { sB.matchWins++; }
-      if (sA) { sA.matchLosses++; }
+      sB && sB.matchWins++
+      sA && sA.matchLosses++
+      h2h.get(m.team_b_id)?.set(m.team_a_id, (h2h.get(m.team_b_id)?.get(m.team_a_id) ?? 0) + 1)
     }
 
     for (const sm of m.submatches ?? []) {
       const sc = sm.scoring
       if (!sc || sc.status !== 'complete') continue
+      const aWonRubber = sc.player1_games > sc.player2_games
       if (sA) {
-        sA.submatchWins += sc.player1_games > sc.player2_games ? 1 : 0
-        sA.gameDiff     += sc.player1_games - sc.player2_games
+        sA.rubberWins   += aWonRubber ? 1 : 0
+        sA.rubberLosses += aWonRubber ? 0 : 1
+        sA.gameWins     += sc.player1_games
+        sA.gameLosses   += sc.player2_games
       }
       if (sB) {
-        sB.submatchWins += sc.player2_games > sc.player1_games ? 1 : 0
-        sB.gameDiff     += sc.player2_games - sc.player1_games
+        sB.rubberWins   += aWonRubber ? 0 : 1
+        sB.rubberLosses += aWonRubber ? 1 : 0
+        sB.gameWins     += sc.player2_games
+        sB.gameLosses   += sc.player1_games
       }
     }
+
+    // Points: need game scores from submatches — we track via submatches only
+    // (already covered above via gameWins/gameLosses which ARE individual game counts)
   }
 
-  return [...map.values()].sort((a, b) =>
-    b.matchWins - a.matchWins ||
-    b.submatchWins - a.submatchWins ||
-    b.gameDiff - a.gameDiff
-  )
+  const ratio = (w: number, l: number) => (w + l === 0 ? 0 : w / (w + l))
+
+  const sorted = [...map.values()].sort((a, b) => {
+    // 1. Match wins
+    if (b.matchWins !== a.matchWins) return b.matchWins - a.matchWins
+    // 2. Rubber ratio
+    const rr = ratio(b.rubberWins, b.rubberLosses) - ratio(a.rubberWins, a.rubberLosses)
+    if (Math.abs(rr) > 1e-9) return rr
+    // 3. Game ratio
+    const gr = ratio(b.gameWins, b.gameLosses) - ratio(a.gameWins, a.gameLosses)
+    if (Math.abs(gr) > 1e-9) return gr
+    // 4. Head-to-head (only meaningful when exactly 2 tied teams)
+    const aWonH2H = h2h.get(a.teamId)?.get(b.teamId) ?? 0
+    const bWonH2H = h2h.get(b.teamId)?.get(a.teamId) ?? 0
+    if (aWonH2H !== bWonH2H) return bWonH2H - aWonH2H
+    return 0
+  })
+
+  return sorted
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -282,26 +326,15 @@ export async function generateTeamGroups(
 
   const G        = groups.length
   const groupIds = groups.map(g => g.id)
-  const assign   = new Map<string, string[]>(groupIds.map(id => [id, []]))
 
-  // Fill-then-spill: same algorithm as player groups
-  const ceil = Math.ceil(teams.length / G)
-  let rrTie  = 0
+  // Sort: seeded teams by seed ascending, then unseeded alphabetically
+  const seeded   = teams.filter(t => t.seed != null).sort((a, b) => (a.seed ?? 0) - (b.seed ?? 0))
+  const unseeded = teams.filter(t => t.seed == null).sort((a, b) => (a as any).name?.localeCompare?.((b as any).name) ?? 0)
+  const ordered  = [...seeded, ...unseeded].map(t => t.id)
 
-  function pick(teamId: string) {
-    const eligible = groupIds.filter(id => assign.get(id)!.length < ceil)
-    const pool     = eligible.length ? eligible : groupIds
-    const minSize  = Math.min(...pool.map(id => assign.get(id)!.length))
-    const smallest = pool.filter(id => assign.get(id)!.length === minSize)
-    assign.get(smallest[rrTie % smallest.length])!.push(teamId)
-    rrTie++
-  }
-
-  // Seeded first (snake), then unseeded
-  const seeded   = teams.filter(t => t.seed != null).sort((a, b) => a.seed! - b.seed!)
-  const unseeded = teams.filter(t => t.seed == null)
-  for (const t of seeded)   pick(t.id)
-  for (const t of unseeded) pick(t.id)
+  // Snake assign: seed 1→G0, 2→G1, …, G→G(G-1), G+1→G(G-1), …, 2G→G0, …
+  const buckets  = snakeAssign(ordered, G)
+  const assign   = new Map<string, string[]>(groupIds.map((id, i) => [id, buckets[i] ?? []]))
 
   // Validate: every group ≥ 2
   for (const [gid, tids] of assign) {
@@ -413,6 +446,39 @@ export async function generateTeamGroupFixtures(
         const { submatchRows, scoringRows } = buildSubmatchRows(
           tmId, globalRound, label, tmIdx, tournamentId, defs,
         )
+
+        // Pre-populate player assignments from team rosters
+        const aPlayers = (teamA?.team_players ?? []).sort((p: any, q: any) => p.position - q.position)
+        const bPlayers = (teamB?.team_players ?? []).sort((p: any, q: any) => p.position - q.position)
+
+        // Position mapping per rubber (1-indexed positions):
+        // Corbillon: S1(1vs1), S2(2vs2), D(1+2 vs 1+2), S3(1vs2), S4(2vs1)
+        // Swaythling: S1(1vs1), S2(2vs2), S3(3vs3), S4(1vs2), S5(2vs1)
+        const isCorbillon = formatType === 'team_group_corbillon'
+        const rubbermapping = isCorbillon
+          ? [[1,1,false],[2,2,false],[1,2,true],[1,2,false],[2,1,false]]   // [aPos, bPos, isDoubles]
+          : [[1,1,false],[2,2,false],[3,3,false],[1,2,false],[2,1,false]]
+
+        for (let ri = 0; ri < submatchRows.length; ri++) {
+          const [aPos, bPos, isDbl] = rubbermapping[ri] ?? [0,0,false]
+          const aP1  = aPlayers.find((p: any) => p.position === aPos)
+          const bP1  = bPlayers.find((p: any) => p.position === bPos)
+          const aP2  = isDbl ? aPlayers.find((p: any) => p.position === 2) : null
+          const bP2  = isDbl ? bPlayers.find((p: any) => p.position === 2) : null
+          const aName = aP1?.name ? (aP2?.name ? `${aP1.name} & ${aP2.name}` : aP1.name) : null
+          const bName = bP1?.name ? (bP2?.name ? `${bP1.name} & ${bP2.name}` : bP1.name) : null
+          if (aP1 || bP1) {
+            Object.assign(submatchRows[ri], {
+              team_a_player_id:  aP1?.id ?? null,
+              team_b_player_id:  bP1?.id ?? null,
+              team_a_player2_id: aP2?.id ?? null,
+              team_b_player2_id: bP2?.id ?? null,
+              player_a_name:     aName,
+              player_b_name:     bName,
+            })
+          }
+        }
+
         allSubmatchRows.push(...submatchRows)
         allScoringRows.push(...scoringRows)
         globalRound++
@@ -734,4 +800,43 @@ export async function getTeamGroupStageData(tournamentId: string) {
   })
 
   return { groups, teams, rrMatches, koMatches, standings, stage }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// updateTeamGroupMatchWinner
+// Manually set the winner of a team group/KO match (admin override).
+// Also triggers KO propagation for KO matches.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function updateTeamGroupMatchWinner(
+  teamMatchId:   string,
+  tournamentId:  string,
+  winnerTeamId:  string,
+): Promise<{ error?: string }> {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { data: tm } = await supabase
+    .from('team_matches')
+    .select('id, team_a_id, team_b_id, team_a_score, team_b_score, round, group_id')
+    .eq('id', teamMatchId)
+    .eq('tournament_id', tournamentId)
+    .single()
+  if (!tm) return { error: 'Match not found' }
+
+  await supabase.from('team_matches').update({
+    winner_team_id: winnerTeamId,
+    status:         'complete',
+    completed_at:   new Date().toISOString(),
+  }).eq('id', teamMatchId)
+
+  // Propagate to next KO match if applicable
+  if (tm.round >= 900) {
+    const { updateTeamKOWinner } = await import('./teamLeague')
+    await updateTeamKOWinner(tournamentId, teamMatchId, winnerTeamId)
+  }
+
+  await revalidateTournamentPaths(supabase, tournamentId)
+  return {}
 }
