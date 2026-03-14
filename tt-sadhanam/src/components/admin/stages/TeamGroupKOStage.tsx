@@ -1941,3 +1941,120 @@ function TeamForm({
     </div>
   )
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TeamGroupKOStage — main export
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function TeamGroupKOStage({ tournament, matchBase }: {
+  tournament: Tournament
+  matchBase:  string
+}) {
+  const [isPending, startTransition] = useTransition()
+  const { setLoading }               = useLoading()
+  const router                       = useRouter()
+  const { teams, teamMatches, groups, stage, loading, loadData } = useTeamGroupData(tournament.id)
+
+  const isCorbillon  = tournament.format_type === 'team_group_corbillon'
+  const formatLabel  = isCorbillon ? 'Corbillon Cup' : 'Swaythling Cup'
+
+  const [activeTab, setActiveTab] = useState<'teams' | 'groups' | 'knockout'>('teams')
+
+  const rrMatches     = teamMatches.filter(m => m.group_id != null)
+  const koMatches     = teamMatches.filter(m => m.group_id == null && m.round >= 900)
+  const fixturesExist = rrMatches.length > 0
+  const allRRDone     = fixturesExist && rrMatches.every(m => m.status === 'complete')
+  const koExists      = koMatches.length > 0
+
+  useEffect(() => {
+    if (koExists) setActiveTab('knockout')
+    else if (stage) setActiveTab('groups')
+  }, [stage?.id, koExists])
+
+  if (loading) return <InlineLoader label="Loading team data…" />
+
+  const tabs: { key: 'teams' | 'groups' | 'knockout'; label: string; icon: React.ReactNode; done?: boolean }[] = [
+    { key: 'teams',    label: 'Teams',    icon: <Users className="h-4 w-4" />, done: teams.length >= 2 },
+    { key: 'groups',   label: 'Groups',   icon: <Layers className="h-4 w-4" />, done: fixturesExist },
+    { key: 'knockout', label: 'Knockout', icon: <Trophy className="h-4 w-4" />, done: koExists },
+  ]
+
+  return (
+    <div className="flex flex-col gap-6">
+      {/* Tab bar */}
+      <div className="flex gap-1 border-b border-border pb-0">
+        {tabs.map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={cn(
+              'flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px',
+              activeTab === tab.key
+                ? 'border-orange-500 text-orange-600 dark:text-orange-400'
+                : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border',
+            )}
+          >
+            {tab.icon}
+            {tab.label}
+            {tab.done && (
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab: Teams */}
+      {activeTab === 'teams' && (
+        <TeamsTab
+          tournament={tournament}
+          teams={teams}
+          teamMatches={teamMatches}
+          stage={stage}
+          loadData={loadData}
+          isPending={isPending}
+          startTransition={startTransition}
+          setLoading={setLoading}
+          router={router}
+          onNext={() => setActiveTab('groups')}
+          formatLabel={formatLabel}
+        />
+      )}
+
+      {/* Tab: Groups */}
+      {activeTab === 'groups' && (
+        <GroupsTab
+          tournament={tournament}
+          teams={teams}
+          groups={groups}
+          stage={stage}
+          teamMatches={teamMatches}
+          rrMatches={rrMatches}
+          matchBase={matchBase}
+          loadData={loadData}
+          isPending={isPending}
+          startTransition={startTransition}
+          setLoading={setLoading}
+          router={router}
+          allRRDone={allRRDone}
+          fixturesExist={fixturesExist}
+          koExists={koExists}
+          onNext={() => setActiveTab('knockout')}
+          isCorbillon={isCorbillon}
+        />
+      )}
+
+      {/* Tab: Knockout */}
+      {activeTab === 'knockout' && (
+        <KnockoutTab
+          tournament={tournament}
+          teams={teams}
+          koMatches={koMatches}
+          matchBase={matchBase}
+          loadData={loadData}
+          isCorbillon={isCorbillon}
+          formatLabel={formatLabel}
+        />
+      )}
+    </div>
+  )
+}
