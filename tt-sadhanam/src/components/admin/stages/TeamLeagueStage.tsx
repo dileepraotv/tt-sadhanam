@@ -195,68 +195,129 @@ function useTeamData(tournamentId: string) {
 // Main export
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function TeamLeagueStage({ tournament, matchBase, view, showSeedInput = false }: Props) {
+export function TeamLeagueStage({ tournament, matchBase, view: _view, showSeedInput = false }: Props) {
   const [isPending, startTransition] = useTransition()
   const { setLoading }               = useLoading()
   const router                       = useRouter()
   const { teams, teamMatches, loading, loadData } = useTeamData(tournament.id)
   const isGenerated = tournament.bracket_generated
 
+  const ft = tournament.format_type ?? 'team_league'
+  const isKOFormat       = ft === 'team_league_ko'
+  const isSwaythling     = ft === 'team_league_swaythling'
+  const isRRKO           = ft === 'team_league'
+  const hasKO            = teamMatches.some(m => m.round >= 900)
+  const rrMatches        = teamMatches.filter(m => m.round < 900)
+  const koMatches        = teamMatches.filter(m => m.round >= 900)
+  const allRRDone        = rrMatches.length > 0 && rrMatches.every(m => m.status === 'complete')
+
+  // Internal tab state — mirrors TeamGroupKOStage pattern
+  const formatLabel = isKOFormat ? 'Corbillon Cup' : isSwaythling ? 'Swaythling Cup' : 'Team League'
+  const tabs = [
+    { key: 'teams',    label: 'Teams' },
+    { key: 'schedule', label: isRRKO ? 'Schedule' : 'Fixtures', disabled: !isGenerated },
+    ...(isRRKO || isKOFormat || isSwaythling
+      ? [{ key: 'knockout', label: 'Knockout', disabled: !hasKO }]
+      : []),
+  ] as const
+  type TabKey = 'teams' | 'schedule' | 'knockout'
+  const [activeTab, setActiveTab] = React.useState<TabKey>(() => {
+    if (hasKO) return 'knockout'
+    if (isGenerated) return 'schedule'
+    return 'teams'
+  })
+
+  // Auto-advance tab when data changes
+  React.useEffect(() => {
+    if (activeTab === 'teams' && isGenerated && !loading) setActiveTab('schedule')
+    if (activeTab === 'schedule' && hasKO) setActiveTab('knockout')
+  }, [isGenerated, hasKO]) // eslint-disable-line react-hooks/exhaustive-deps
+
   if (loading) {
     return <InlineLoader label="Loading team data…" />
   }
 
-  if (view === 'schedule') {
-    return (
-      <TeamScheduleView
-        tournament={tournament}
-        teams={teams}
-        teamMatches={teamMatches}
-        matchBase={matchBase}
-        loadData={loadData}
-        isPending={isPending}
-        startTransition={startTransition}
-        setLoading={setLoading}
-        router={router}
-        isGenerated={isGenerated}
-      />
-    )
-  }
-
-  if (view === 'knockout' || view === 'bracket') {
-    const rrMatches = teamMatches.filter(m => m.round < 900)
-    const koMatches = teamMatches.filter(m => m.round >= 900)
-    return (
-      <TeamKOView
-        tournament={tournament}
-        teams={teams}
-        teamMatches={teamMatches}
-        rrMatches={rrMatches}
-        koMatches={koMatches}
-        matchBase={matchBase}
-        loadData={loadData}
-        isPending={isPending}
-        startTransition={startTransition}
-        setLoading={setLoading}
-        router={router}
-        isRRKO={view === 'knockout'}
-      />
-    )
-  }
-
   return (
-    <TeamSetupView
-      tournament={tournament}
-      teams={teams}
-      teamMatches={teamMatches}
-      loadData={loadData}
-      isPending={isPending}
-      startTransition={startTransition}
-      setLoading={setLoading}
-      router={router}
-      isGenerated={isGenerated}
-      showSeedInput={showSeedInput}
-    />
+    <div className="flex flex-col gap-0">
+      {/* ── Tab strip — matches TeamGroupKOStage style ── */}
+      <div
+        className="flex items-end gap-1 overflow-x-auto pb-0 scrollbar-hide border-b-2 mb-6"
+        style={{ borderColor: '#F06321' }}
+      >
+        {tabs.map(tab => {
+          const isActive   = activeTab === tab.key
+          const isDisabled = 'disabled' in tab && tab.disabled
+          return (
+            <button
+              key={tab.key}
+              disabled={isDisabled}
+              onClick={() => !isDisabled && setActiveTab(tab.key as TabKey)}
+              style={isActive
+                ? { background: '#F06321', color: '#fff', border: '2px solid #F06321', borderBottom: 'none' }
+                : undefined}
+              className={cn(
+                'shrink-0 px-4 pt-2 pb-2 text-sm font-bold transition-all rounded-t-lg whitespace-nowrap',
+                !isActive && !isDisabled && 'text-muted-foreground hover:text-foreground hover:bg-muted/60',
+                !isActive && isDisabled && 'text-muted-foreground/30 cursor-not-allowed',
+              )}
+            >
+              {tab.label}
+            </button>
+          )
+        })}
+        <div className="flex-1" />
+      </div>
+
+      {/* ── Tab content ── */}
+      {activeTab === 'teams' && (
+        <TeamSetupView
+          tournament={tournament}
+          teams={teams}
+          teamMatches={teamMatches}
+          loadData={loadData}
+          isPending={isPending}
+          startTransition={startTransition}
+          setLoading={setLoading}
+          router={router}
+          isGenerated={isGenerated}
+          showSeedInput={showSeedInput}
+          onNext={() => setActiveTab('schedule')}
+        />
+      )}
+
+      {activeTab === 'schedule' && (
+        <TeamScheduleView
+          tournament={tournament}
+          teams={teams}
+          teamMatches={teamMatches}
+          matchBase={matchBase}
+          loadData={loadData}
+          isPending={isPending}
+          startTransition={startTransition}
+          setLoading={setLoading}
+          router={router}
+          isGenerated={isGenerated}
+          onNextKO={() => setActiveTab('knockout')}
+        />
+      )}
+
+      {activeTab === 'knockout' && (
+        <TeamKOView
+          tournament={tournament}
+          teams={teams}
+          teamMatches={teamMatches}
+          rrMatches={rrMatches}
+          koMatches={koMatches}
+          matchBase={matchBase}
+          loadData={loadData}
+          isPending={isPending}
+          startTransition={startTransition}
+          setLoading={setLoading}
+          router={router}
+          isRRKO={isRRKO}
+        />
+      )}
+    </div>
   )
 }
 
@@ -500,7 +561,7 @@ function TeamForm({
 
 function TeamSetupView({
   tournament, teams, teamMatches, loadData,
-  isPending, startTransition, setLoading, router, isGenerated, showSeedInput,
+  isPending, startTransition, setLoading, router, isGenerated, showSeedInput, onNext,
 }: {
   tournament:      Tournament
   teams:           TeamWithPlayers[]
@@ -512,6 +573,7 @@ function TeamSetupView({
   router:          ReturnType<typeof useRouter>
   isGenerated:     boolean
   showSeedInput:   boolean
+  onNext?:         () => void
 }) {
   const [editingTeamId, setEditingTeamId] = useState<string | null>(null)
   const [showAddForm,   setShowAddForm]   = useState(false)
@@ -599,8 +661,10 @@ function TeamSetupView({
         await loadData(); router.refresh()
         toast({ title: isAnyKOFormat
           ? '✅ Bracket generated'
-          : `✅ Schedule generated — ${(res as { teamMatchCount?: number }).teamMatchCount} fixtures`
+          : `✅ Schedule generated — ${(res as { teamMatchCount?: number }).teamMatchCount} fixtures`,
+          variant: 'success',
         })
+        onNext?.()
       }
     })
   }
@@ -838,7 +902,7 @@ function TeamSetupView({
 
 function TeamScheduleView({
   tournament, teams, teamMatches, matchBase, isGenerated,
-  loadData, isPending, startTransition, setLoading, router,
+  loadData, isPending, startTransition, setLoading, router, onNextKO,
 }: {
   tournament:      Tournament
   teams:           TeamWithPlayers[]
@@ -850,6 +914,7 @@ function TeamScheduleView({
   setLoading:      (v: boolean) => void
   router:          ReturnType<typeof useRouter>
   isGenerated:     boolean
+  onNextKO?:       () => void
 }) {
   const searchParams  = useSearchParams()
   const initRound     = Number(searchParams.get('round') ?? 1)
@@ -872,7 +937,8 @@ function TeamScheduleView({
         toast({ title: 'Could not generate knockout', description: res.error, variant: 'destructive' })
       } else {
         await loadData(); router.refresh()
-        toast({ title: '✅ Knockout phase generated — Semi-Finals + Final' })
+        toast({ title: '✅ Knockout phase generated — Semi-Finals + Final', variant: 'success' })
+        onNextKO?.()
       }
     })
   }

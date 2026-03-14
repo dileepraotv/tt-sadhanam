@@ -91,7 +91,9 @@ function buildSubmatchRows(
       id:            matchId,
       tournament_id: tournamentId,
       round:         roundN,
-      match_number:  roundN * 1000 + tmIndex * 10 + sm.order,
+      // Use offset from 900 to stay within smallint range (max 32767).
+      // roundN is 900..915, so (roundN-900)*200 + tmIndex*10 + sm.order fits easily.
+      match_number:  (roundN - 900) * 200 + tmIndex * 10 + sm.order,
       round_name:    `${roundLabel} — ${sm.label}`,
       player1_id:    null,
       player2_id:    null,
@@ -476,8 +478,9 @@ export async function generateTeamGroupFixtures(
           const [aPos, bPos, isDbl] = rubbermapping[ri] ?? [0,0,false]
           const aP1  = aPlayers.find((p: any) => p.position === aPos)
           const bP1  = bPlayers.find((p: any) => p.position === bPos)
-          const aP2  = isDbl ? aPlayers.find((p: any) => p.position === 2) : null
-          const bP2  = isDbl ? bPlayers.find((p: any) => p.position === 2) : null
+          // For doubles: aP1=aPos, bP1=bPos. Partner is the OTHER position on each team.
+          const aP2  = isDbl ? aPlayers.find((p: any) => p.position !== aPos && p.position <= 2) : null
+          const bP2  = isDbl ? bPlayers.find((p: any) => p.position !== bPos && p.position <= 2) : null
           const aName = aP1?.name ? (aP2?.name ? `${aP1.name} & ${aP2.name}` : aP1.name) : null
           const bName = bP1?.name ? (bP2?.name ? `${bP1.name} & ${bP2.name}` : bP1.name) : null
           if (aP1 || bP1) {

@@ -1221,9 +1221,27 @@ function LineupEditor({
   const [a2Id, setA2Id] = useState<string>(submatch.team_a_player2_id ?? '')
   const [b2Id, setB2Id] = useState<string>(submatch.team_b_player2_id ?? '')
 
-  useEffect(() => {
-    onChange(aId||null, bId||null, isDbl ? (a2Id||null) : undefined, isDbl ? (b2Id||null) : undefined)
-  }, [aId, bId, a2Id, b2Id])
+  // Track whether any field has actually changed from the saved DB value
+  const savedRef = useRef({
+    aId:  submatch.team_a_player_id ?? '',
+    bId:  submatch.team_b_player_id ?? '',
+    a2Id: submatch.team_a_player2_id ?? '',
+    b2Id: submatch.team_b_player2_id ?? '',
+  })
+
+  // Only notify parent when user actually changes something
+  const notify = (newAId: string, newBId: string, newA2Id: string, newB2Id: string) => {
+    const s = savedRef.current
+    const changed = newAId !== s.aId || newBId !== s.bId || newA2Id !== s.a2Id || newB2Id !== s.b2Id
+    if (changed) {
+      onChange(newAId||null, newBId||null, isDbl ? (newA2Id||null) : undefined, isDbl ? (newB2Id||null) : undefined)
+    }
+  }
+
+  const handleA  = (v: string) => { setAId(v);  notify(v,   bId,  a2Id, b2Id) }
+  const handleB  = (v: string) => { setBId(v);  notify(aId, v,    a2Id, b2Id) }
+  const handleA2 = (v: string) => { setA2Id(v); notify(aId, bId,  v,    b2Id) }
+  const handleB2 = (v: string) => { setB2Id(v); notify(aId, bId,  a2Id, v   ) }
 
   const aPlayers = teamA?.players ?? []
   const bPlayers = teamB?.players ?? []
@@ -1233,12 +1251,12 @@ function LineupEditor({
     <div className="grid grid-cols-2 gap-2 mt-1.5">
       <div className="flex flex-col gap-1">
         <span className="text-[10px] font-semibold text-muted-foreground uppercase">{teamA?.name ?? 'Team A'}</span>
-        <select value={aId} onChange={e => setAId(e.target.value)} className={sel}>
+        <select value={aId} onChange={e => handleA(e.target.value)} className={sel}>
           <option value="">— select —</option>
           {aPlayers.map(p => <option key={p.id} value={p.id}>{p.position}. {p.name}</option>)}
         </select>
         {isDbl && (
-          <select value={a2Id} onChange={e => setA2Id(e.target.value)} className={sel}>
+          <select value={a2Id} onChange={e => handleA2(e.target.value)} className={sel}>
             <option value="">— partner —</option>
             {aPlayers.filter(p => p.id !== aId).map(p => <option key={p.id} value={p.id}>{p.position}. {p.name}</option>)}
           </select>
@@ -1246,12 +1264,12 @@ function LineupEditor({
       </div>
       <div className="flex flex-col gap-1">
         <span className="text-[10px] font-semibold text-muted-foreground uppercase">{teamB?.name ?? 'Team B'}</span>
-        <select value={bId} onChange={e => setBId(e.target.value)} className={sel}>
+        <select value={bId} onChange={e => handleB(e.target.value)} className={sel}>
           <option value="">— select —</option>
           {bPlayers.map(p => <option key={p.id} value={p.id}>{p.position}. {p.name}</option>)}
         </select>
         {isDbl && (
-          <select value={b2Id} onChange={e => setB2Id(e.target.value)} className={sel}>
+          <select value={b2Id} onChange={e => handleB2(e.target.value)} className={sel}>
             <option value="">— partner —</option>
             {bPlayers.filter(p => p.id !== bId).map(p => <option key={p.id} value={p.id}>{p.position}. {p.name}</option>)}
           </select>
@@ -1278,12 +1296,57 @@ function FixtureDetailPanel({
   const [lineupEdits,    setLineupEdits]    = useState<Map<string, [string|null,string|null,string|null|undefined,string|null|undefined]>>(new Map())
   const [savingLineup,   setSavingLineup]   = useState(false)
   const [lineupDirty,    setLineupDirty]    = useState(false)
+  const [autoSaving,     setAutoSaving]     = useState(false)
+  const autoSavedRef = useRef(false)
 
   // Always look up teams directly by ID — never trust cached team_a/team_b on match objects
   const teamA  = teams.find(t => t.id === match.team_a_id) ?? null
   const teamB  = teams.find(t => t.id === match.team_b_id) ?? null
   const isLocked = match.status === 'complete'
   const format = (tournament.format ?? 'bo5') as MatchFormat
+
+  // Auto-save default player assignments on first render if not yet saved
+  // This ensures scoring pages always show real names instead of TBD
+  useEffect(() => {
+    if (isLocked || autoSavedRef.current) return
+    const anyUnsaved = match.submatches.some(sm => {
+      const a = teamA?.players ?? []
+      const b = teamB?.players ?? []
+      if (sm.team_a_player_id && sm.team_b_player_id) return false // already saved
+      // Check if there are players to auto-assign
+      return a.length > 0 || b.length > 0
+    })
+    if (!anyUnsaved) return
+    autoSavedRef.current = true
+
+    // Build auto-assignments from position defaults
+    const isDbl = (sm: Submatch) => isCorbillon && sm.match_order === 3
+    const posFromLabel = (label: string, side: 'a' | 'b'): number => {
+      const m = label.match(/\(([A-Z/]+)\s+vs\s+([A-Z/]+)\)/)
+      if (!m) return side === 'a' ? 1 : 1
+      const letter = side === 'a' ? m[1][0] : m[2][0]
+      return ({ A: 1, B: 2, C: 3, X: 1, Y: 2, Z: 3 } as Record<string, number>)[letter] ?? 1
+    }
+
+    const submatches = match.submatches.map(sm => {
+      const aPlayers = teamA?.players ?? []
+      const bPlayers = teamB?.players ?? []
+      const isDouble = isDbl(sm)
+      const aPos = isDouble ? 1 : posFromLabel(sm.label, 'a')
+      const bPos = isDouble ? 2 : posFromLabel(sm.label, 'b')
+      const aP1 = sm.team_a_player_id ?? aPlayers.find(p => p.position === aPos)?.id ?? null
+      const bP1 = sm.team_b_player_id ?? bPlayers.find(p => p.position === bPos)?.id ?? null
+      // Partner = the OTHER position on each team
+      const aP2 = isDouble ? (sm.team_a_player2_id ?? aPlayers.find(p => p.position !== aPos && p.position <= 2)?.id ?? null) : null
+      const bP2 = isDouble ? (sm.team_b_player2_id ?? bPlayers.find(p => p.position !== bPos && p.position <= 2)?.id ?? null) : null
+      return { submatchId: sm.id, teamAPlayerId: aP1, teamBPlayerId: bP1, teamAPlayer2Id: aP2, teamBPlayer2Id: bP2 }
+    })
+
+    setAutoSaving(true)
+    batchUpdateSubmatchPlayers({ tournamentId: tournament.id, submatches })
+      .then(() => { setAutoSaving(false) })
+      .catch(() => { setAutoSaving(false) })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleLineupChange = (smId: string, a: string|null, b: string|null, a2?: string|null, b2?: string|null) => {
     setLineupEdits(prev => { const m = new Map(prev); m.set(smId, [a, b, a2, b2]); return m })
@@ -1306,8 +1369,8 @@ function FixtureDetailPanel({
     setSavingLineup(false)
     if (res.error) { toast({ title: res.error, variant: 'destructive' }); return }
     setLineupDirty(false)
+    setLineupEdits(new Map())
     toast({ title: 'Lineup saved', variant: 'success' })
-    // Realtime subscription handles the refresh — no explicit loadData needed
   }
 
   return (
@@ -1327,14 +1390,21 @@ function FixtureDetailPanel({
         </div>
       </div>
 
-      {/* Lineup save button */}
-      {lineupDirty && !isLocked && (
-        <div className="flex justify-end mb-3">
-          <Button size="sm" onClick={handleSaveLineup} disabled={savingLineup}
-            className="gap-1.5 h-7 text-xs">
-            {savingLineup ? <span className="tt-spinner tt-spinner-sm" /> : <Check className="h-3 w-3" />}
-            Save Lineup
-          </Button>
+      {/* Lineup save/status bar */}
+      {!isLocked && (autoSaving || lineupDirty) && (
+        <div className="flex items-center justify-between mb-3 px-1">
+          <span className="text-[11px] text-muted-foreground">
+            {autoSaving
+              ? '⏳ Auto-saving player assignments…'
+              : '⚠ Player assignments changed — save to confirm'}
+          </span>
+          {lineupDirty && !autoSaving && (
+            <Button size="sm" onClick={handleSaveLineup} disabled={savingLineup}
+              className="gap-1.5 h-7 text-xs">
+              {savingLineup ? <span className="tt-spinner tt-spinner-sm" /> : <Check className="h-3 w-3" />}
+              Save Lineup
+            </Button>
+          )}
         </div>
       )}
 
@@ -1468,6 +1538,7 @@ function GroupsTab({
   const preview  = numTeams >= 2 && previewN > 0 ? snakeAssign(ordered, previewN) : []
 
   const handleCreateStage = () => {
+    setLoading(true)
     startTransition(async () => {
       const G = configMode === 'numGroups' ? numGroups : layout.numGroups
       const res = await createTeamRRStage({
@@ -1476,8 +1547,9 @@ function GroupsTab({
         advanceCount,
         matchFormat:    'bo5',
       })
-      if (res.error) { toast({ title: res.error, variant: 'warning' }); return }
+      if (res.error) { setLoading(false); toast({ title: res.error, variant: 'warning' }); return }
       const r2 = await generateTeamGroups(res.stageId!, tournament.id)
+      setLoading(false)
       if (r2.error) { toast({ title: r2.error, variant: 'warning' }); return }
       toast({ title: `${G} groups created & teams assigned.`, variant: 'success' })
       await loadData(); router.refresh()
@@ -1486,8 +1558,10 @@ function GroupsTab({
 
   const handleRegenerateGroups = () => {
     if (!stage) return
+    setLoading(true)
     startTransition(async () => {
       const res = await generateTeamGroups(stage.id, tournament.id)
+      setLoading(false)
       if (res.error) { toast({ title: res.error, variant: 'warning' }); return }
       toast({ title: 'Groups re-assigned.', variant: 'success' })
       await loadData(true); router.refresh()
@@ -1754,15 +1828,19 @@ function GroupsTab({
                                   <button className="w-full flex items-center gap-2 text-left"
                                     onClick={() => setExpandedMatch(isExpM ? null : m.id)}>
                                     <div className="flex-1 min-w-0 flex items-center gap-2 text-sm">
-                                      <WinnerTrophy show={isComplete && m.winner_team_id === m.team_a_id} />
-                                      <span className={cn('font-medium truncate', isComplete && m.winner_team_id !== m.team_a_id && 'text-muted-foreground')}>
-                                        {m.team_a_name}
-                                      </span>
+                                      <div className="flex items-center gap-1.5 min-w-0">
+                                        <WinnerTrophy show={isComplete && m.winner_team_id === m.team_a_id} />
+                                        <span className={cn('font-medium truncate', isComplete && m.winner_team_id !== m.team_a_id && 'text-muted-foreground')}>
+                                          {m.team_a_name}
+                                        </span>
+                                      </div>
                                       <span className="font-mono font-bold text-sm shrink-0">{m.team_a_score}–{m.team_b_score}</span>
-                                      <WinnerTrophy show={isComplete && m.winner_team_id === m.team_b_id} />
-                                      <span className={cn('font-medium truncate', isComplete && m.winner_team_id !== m.team_b_id && 'text-muted-foreground')}>
-                                        {m.team_b_name}
-                                      </span>
+                                      <div className="flex items-center gap-1.5 min-w-0">
+                                        <WinnerTrophy show={isComplete && m.winner_team_id === m.team_b_id} />
+                                        <span className={cn('font-medium truncate', isComplete && m.winner_team_id !== m.team_b_id && 'text-muted-foreground')}>
+                                          {m.team_b_name}
+                                        </span>
+                                      </div>
                                     </div>
                                     <div className="flex items-center gap-2 shrink-0">
                                       <span className="text-xs text-muted-foreground">{doneCount}/{m.submatches.length}</span>

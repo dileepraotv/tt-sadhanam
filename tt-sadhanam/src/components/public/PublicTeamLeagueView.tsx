@@ -46,7 +46,7 @@ export function PublicTeamLeagueView({ tournament }: Props) {
           *,
           team_a:team_a_id(id,name,short_name,color),
           team_b:team_b_id(id,name,short_name,color),
-          team_match_submatches(
+          submatches:team_match_submatches(
             id, match_order, label, player_a_name, player_b_name, match_id,
             scoring:match_id(
               id, player1_id, player2_id, winner_id,
@@ -59,16 +59,27 @@ export function PublicTeamLeagueView({ tournament }: Props) {
         .order('round'),
     ])
 
-    const tms = (tmRes.data ?? []) as unknown as TeamMatch[]
+    // Map submatches, attaching embedded scoring as the match object
+    const tms: TeamMatch[] = (tmRes.data ?? []).map((tm: any) => ({
+      ...tm,
+      submatches: ((tm.submatches ?? []) as any[])
+        .sort((a: any, b: any) => a.match_order - b.match_order)
+        .map((sm: any) => ({
+          ...sm,
+          // scoring is embedded from the PostgREST join
+          match: sm.scoring ?? null,
+        })),
+    }))
     setTeams((teamsRes.data ?? []) as Team[])
     setTeamMatches(tms)
 
     // Flatten embedded scoring matches for the subMatchScores map
     const embedded = tms.flatMap(tm =>
-      ((tm.submatches ?? []) as unknown as Array<{ scoring?: Match | null }>)
-        .map(sm => sm.scoring).filter(Boolean) as Match[]
+      (tm.submatches ?? [])
+        .map((sm: any) => sm.match ?? sm.scoring)
+        .filter(Boolean) as Match[]
     )
-    if (embedded.length > 0) setScoringMatches(embedded)
+    setScoringMatches(embedded)
 
     setLoading(false)
   }
