@@ -124,20 +124,35 @@ function pickColor(i: number) { return TEAM_COLORS[i % TEAM_COLORS.length] }
 // Data hook — loads teams, stage, groups, and team_matches in parallel
 // ─────────────────────────────────────────────────────────────────────────────
 
-function useTeamGroupData(tournamentId: string) {
-  const supabase = createClient()
-  const [teams,       setTeams]       = useState<TeamWithPlayers[]>([])
-  const [teamMatches, setTeamMatches] = useState<TeamMatchRich[]>([])
-  const [groups,      setGroups]      = useState<RRGroup[]>([])
-  const [stage,       setStage]       = useState<StageRow | null>(null)
-  const [loading,     setLoading]     = useState(true)
+// Atomic snapshot so teams and teamMatches are always from the same fetch
+interface DataSnapshot {
+  teams:       TeamWithPlayers[]
+  teamMatches: TeamMatchRich[]
+  teamById:    Map<string, TeamWithPlayers>
+  groups:      RRGroup[]
+  stage:       StageRow | null
+}
 
-  const loadData = async (silent = false) => {
+function useTeamGroupData(tournamentId: string) {
+  const supabase   = createClient()
+  const [snap,     setSnap]    = useState<DataSnapshot>({
+    teams: [], teamMatches: [], teamById: new Map(), groups: [], stage: null,
+  })
+  const [loading,  setLoading] = useState(true)
+
+  // Load-ID guard: only apply results from the LATEST outstanding request.
+  // Prevents older slow responses overwriting fresher ones (the root cause of
+  // the wrong team name bug after concurrent Realtime-triggered reloads).
+  const loadIdRef = useRef(0)
+  // Debounce timer so rapid Realtime events collapse into a single fetch
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const loadData = useCallback(async (silent = false) => {
+    const myId = ++loadIdRef.current
     if (!silent) setLoading(true)
 
-    // 3 parallel queries — NO team_a/team_b FK joins on team_matches.
-    // PostgREST collapses two aliases pointing at the same FK table into one row.
-    // Teams are looked up at render time from the separate teams list instead.
+    // All queries run in parallel — NO team_a/team_b FK joins (PostgREST collapses
+    // two aliases pointing at the same table into one row, corrupting both).
     const [teamsRes, stageRes, matchesRes] = await Promise.all([
       supabase
         .from('teams')
@@ -168,15 +183,19 @@ function useTeamGroupData(tournamentId: string) {
         .order('round'),
     ])
 
-    const stageData = stageRes.data as StageRow | null
-    setStage(stageData)
+    // Discard stale response if a newer load has started
+    if (myId !== loadIdRef.current) return
 
-    setTeams((teamsRes.data ?? []).map(t => ({
+    const stageData = stageRes.data as StageRow | null
+
+    // Build teamById from THIS fetch's teams data — always in sync with teamMatches
+    const teamList = (teamsRes.data ?? []).map(t => ({
       ...t,
       players: ((t.team_players ?? []) as TeamPlayer[]).sort((a, b) => a.position - b.position),
-    })) as TeamWithPlayers[])
+    })) as TeamWithPlayers[]
+    const teamById = new Map(teamList.map(t => [t.id, t]))
 
-    setTeamMatches((matchesRes.data ?? []).map(tm => ({
+    const teamMatchList = (matchesRes.data ?? []).map(tm => ({
       id:             (tm as any).id,
       tournament_id:  (tm as any).tournament_id,
       team_a_id:      (tm as any).team_a_id,
@@ -190,56 +209,62 @@ function useTeamGroupData(tournamentId: string) {
       group_id:       (tm as any).group_id,
       submatches: ((tm as any).submatches ?? [])
         .sort((a: Submatch, b: Submatch) => a.match_order - b.match_order),
-    })) as TeamMatchRich[])
+    })) as TeamMatchRich[]
 
-    // Load groups + members if stage exists (explicit queries — no FK-embedded-select)
+    // Load groups
+    let groupList: RRGroup[] = []
     if (stageData) {
       const { data: groupRows } = await supabase
-        .from('rr_groups')
-        .select('id, group_number, name')
-        .eq('stage_id', stageData.id)
-        .order('group_number')
+        .from('rr_groups').select('id, group_number, name')
+        .eq('stage_id', stageData.id).order('group_number')
 
       const gIds = (groupRows ?? []).map(g => g.id)
       const { data: memberRows } = gIds.length > 0
         ? await supabase.from('team_rr_group_members').select('group_id, team_id').in('group_id', gIds)
         : { data: [] }
 
-      // Build groupId → teamId[] map
       const memberMap = new Map<string, string[]>()
       for (const m of memberRows ?? []) {
         const arr = memberMap.get(m.group_id) ?? []
         arr.push(m.team_id)
         memberMap.set(m.group_id, arr)
       }
-
-      setGroups((groupRows ?? []).map(g => ({
-        id:           g.id,
-        group_number: g.group_number,
-        name:         g.name,
-        teamIds:      memberMap.get(g.id) ?? [],
-      })))
-    } else {
-      setGroups([])
+      groupList = (groupRows ?? []).map(g => ({
+        id: g.id, group_number: g.group_number, name: g.name,
+        teamIds: memberMap.get(g.id) ?? [],
+      }))
     }
 
+    // Discard again after the group fetch (async gap)
+    if (myId !== loadIdRef.current) return
+
+    // Single atomic state update — teams, matches, and teamById are always consistent
+    setSnap({ teams: teamList, teamMatches: teamMatchList, teamById, groups: groupList, stage: stageData })
     setLoading(false)
-  }
-
-  useEffect(() => { loadData() }, [tournamentId])
-
-  useEffect(() => {
-    const channel = supabase
-      .channel(`team-group-${tournamentId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'teams',        filter: `tournament_id=eq.${tournamentId}` }, () => loadData(true))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'team_matches', filter: `tournament_id=eq.${tournamentId}` }, () => loadData(true))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'team_match_submatches' }, () => loadData(true))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'rr_groups' },  () => loadData(true))
-      .subscribe()
-    return () => { supabase.removeChannel(channel) }
   }, [tournamentId])
 
-  return { teams, teamMatches, groups, stage, loading, loadData }
+  useEffect(() => { loadData() }, [loadData])
+
+  useEffect(() => {
+    const debouncedLoad = () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      debounceRef.current = setTimeout(() => loadData(true), 300)
+    }
+    const channel = supabase
+      .channel(`team-group-${tournamentId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'teams',        filter: `tournament_id=eq.${tournamentId}` }, debouncedLoad)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'team_matches', filter: `tournament_id=eq.${tournamentId}` }, debouncedLoad)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'team_match_submatches' }, debouncedLoad)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rr_groups' },  debouncedLoad)
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel)
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [tournamentId, loadData])
+
+  const { teams, teamMatches, teamById, groups, stage } = snap
+  return { teams, teamMatches, teamById, groups, stage, loading, loadData }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -301,7 +326,7 @@ export function TeamGroupKOStage({ tournament, matchBase }: {
   const [isPending, startTransition] = useTransition()
   const { setLoading }               = useLoading()
   const router                       = useRouter()
-  const { teams, teamMatches, groups, stage, loading, loadData } = useTeamGroupData(tournament.id)
+  const { teams, teamMatches, teamById, groups, stage, loading, loadData } = useTeamGroupData(tournament.id)
 
   const isCorbillon  = tournament.format_type === 'team_group_corbillon'
   const formatLabel  = isCorbillon ? 'Corbillon Cup' : 'Swaythling Cup'
@@ -374,6 +399,7 @@ export function TeamGroupKOStage({ tournament, matchBase }: {
         <GroupsTab
           tournament={tournament}
           teams={teams}
+          teamById={teamById}
           groups={groups}
           stage={stage}
           teamMatches={teamMatches}
@@ -397,6 +423,7 @@ export function TeamGroupKOStage({ tournament, matchBase }: {
         <KnockoutTab
           tournament={tournament}
           teams={teams}
+          teamById={teamById}
           koMatches={koMatches}
           matchBase={matchBase}
           loadData={loadData}
@@ -971,6 +998,7 @@ function RubberScorer({
   const [localScores, setLocal]    = useState<Record<number, GameLocal>>({})
   const [saving,      setSaving]   = useState(false)
   const [loadingG,    setLoadingG] = useState(true)
+  const [forceEdit,   setForceEdit] = useState(false)
   // Per-rubber format selector — defaults to tournament format, user can override
   const [activeFormat, setActiveFormat] = useState<MatchFormat>(propFormat)
   const scoring = submatch.scoring
@@ -1069,7 +1097,7 @@ function RubberScorer({
 
   if (loadingG) return <div className="text-xs text-muted-foreground py-2 px-3">Loading…</div>
 
-  const isComplete   = scoring?.status === 'complete'
+  const isComplete   = (scoring?.status === 'complete') && !forceEdit
   const p1Wins       = scoring?.player1_games ?? 0
   const p2Wins       = scoring?.player2_games ?? 0
 
@@ -1143,9 +1171,15 @@ function RubberScorer({
       {/* Result / actions */}
       <div className="flex items-center gap-2 flex-wrap">
         {isComplete ? (
-          <div className="flex items-center gap-1.5 text-sm font-semibold text-emerald-600 dark:text-emerald-400">
-            <Check className="h-3.5 w-3.5" />
-            {p1Wins > p2Wins ? (teamA?.name ?? 'Team A') : (teamB?.name ?? 'Team B')} wins {p1Wins}–{p2Wins} rubbers
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="flex items-center gap-1.5 text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+              <Check className="h-3.5 w-3.5" />
+              {p1Wins > p2Wins ? (teamA?.name ?? 'Team A') : (teamB?.name ?? 'Team B')} wins {p1Wins}–{p2Wins}
+            </span>
+            <button onClick={() => setForceEdit(true)}
+              className="text-xs text-muted-foreground hover:text-orange-500 underline transition-colors">
+              Edit
+            </button>
           </div>
         ) : (
           <>
@@ -1276,7 +1310,7 @@ function FixtureDetailPanel({
     if (res.error) { toast({ title: res.error, variant: 'destructive' }); return }
     setLineupDirty(false)
     toast({ title: 'Lineup saved', variant: 'success' })
-    loadData()
+    // Realtime subscription handles the refresh — no explicit loadData needed
   }
 
   return (
@@ -1389,12 +1423,13 @@ function FixtureDetailPanel({
 // ─────────────────────────────────────────────────────────────────────────────
 
 function GroupsTab({
-  tournament, teams, groups, stage, teamMatches, rrMatches, matchBase,
+  tournament, teams, teamById, groups, stage, teamMatches, rrMatches, matchBase,
   loadData, isPending, startTransition, setLoading, router,
   allRRDone, fixturesExist, koExists, onNext, isCorbillon,
 }: {
   tournament:      Tournament
   teams:           TeamWithPlayers[]
+  teamById:        Map<string, TeamWithPlayers>
   groups:          RRGroup[]
   stage:           StageRow | null
   teamMatches:     TeamMatchRich[]
@@ -1428,13 +1463,13 @@ function GroupsTab({
   const canFinalize  = allRRDone && !koExists
   const groupsAssigned = groups.length > 0 && groups.every(g => g.teamIds.length >= 2)
 
-  // Snake preview
+  // Snake preview — use N directly (not layout.numGroups which may differ when numTeams
+  // isn't cleanly divisible by the requested group count)
   const seeded   = [...teams].filter(t => t.seed != null).sort((a, b) => (a.seed ?? 0) - (b.seed ?? 0))
   const unseeded = [...teams].filter(t => t.seed == null)
   const ordered  = [...seeded, ...unseeded]
-  const preview  = layout.numGroups > 0 ? snakeAssign(ordered, layout.numGroups) : []
-
-  const teamById = new Map(teams.map(t => [t.id, t]))
+  const previewN = Math.max(1, configMode === 'numGroups' ? numGroups : layout.numGroups)
+  const preview  = numTeams >= 2 && previewN > 0 ? snakeAssign(ordered, previewN) : []
 
   const handleCreateStage = () => {
     startTransition(async () => {
@@ -1804,9 +1839,10 @@ function GroupsTab({
 // KnockoutTab — shows the KO bracket for the team group+KO event
 // ─────────────────────────────────────────────────────────────────────────────
 
-function KnockoutTab({ tournament, teams, koMatches, matchBase, loadData, isCorbillon, formatLabel }: {
+function KnockoutTab({ tournament, teams, teamById, koMatches, matchBase, loadData, isCorbillon, formatLabel }: {
   tournament:  Tournament
   teams:       TeamWithPlayers[]
+  teamById:    Map<string, TeamWithPlayers>
   koMatches:   TeamMatchRich[]
   matchBase:   string
   loadData:    (s?: boolean) => Promise<void>
@@ -1834,7 +1870,6 @@ function KnockoutTab({ tournament, teams, koMatches, matchBase, loadData, isCorb
     roundMap.set(m.round, arr)
   }
   const rounds = [...roundMap.entries()].sort((a, b) => a[0] - b[0])
-  const teamById = new Map(teams.map(t => [t.id, t]))
 
   return (
     <div className="flex flex-col gap-4">
