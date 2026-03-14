@@ -134,133 +134,172 @@ interface DataSnapshot {
 }
 
 function useTeamGroupData(tournamentId: string) {
-  const supabase   = createClient()
-  const [snap,     setSnap]    = useState<DataSnapshot>({
+  // Stable supabase ref — never recreated, no closure-capture issues
+  const sbRef = useRef(createClient())
+  const sb    = sbRef.current
+
+  const [snap,    setSnap]    = useState<DataSnapshot>({
     teams: [], teamMatches: [], teamById: new Map(), groups: [], stage: null,
   })
-  const [loading,  setLoading] = useState(true)
+  const [loading, setLoading] = useState(true)
 
-  // Load-ID guard: only apply results from the LATEST outstanding request.
-  // Prevents older slow responses overwriting fresher ones (the root cause of
-  // the wrong team name bug after concurrent Realtime-triggered reloads).
-  const loadIdRef = useRef(0)
-  // Debounce timer so rapid Realtime events collapse into a single fetch
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Load-ID guard: only the latest outstanding request may commit results
+  const loadIdRef    = useRef(0)
+  const inflightRef  = useRef(false)
 
   const loadData = useCallback(async (silent = false) => {
+    // If already loading (explicit call), skip — Realtime will catch up
+    if (!silent && inflightRef.current) return
     const myId = ++loadIdRef.current
+    inflightRef.current = true
     if (!silent) setLoading(true)
 
-    // All queries run in parallel — NO team_a/team_b FK joins (PostgREST collapses
-    // two aliases pointing at the same table into one row, corrupting both).
-    const [teamsRes, stageRes, matchesRes] = await Promise.all([
-      supabase
-        .from('teams')
-        .select('*, doubles_p1_pos, doubles_p2_pos, team_players(id, name, position)')
-        .eq('tournament_id', tournamentId)
-        .order('created_at'),
-      supabase
-        .from('stages')
-        .select('id, config')
-        .eq('tournament_id', tournamentId)
-        .eq('stage_number', 1)
-        .maybeSingle(),
-      supabase
-        .from('team_matches')
-        .select(`
-          id, tournament_id, team_a_id, team_b_id, round, round_name,
-          status, team_a_score, team_b_score, winner_team_id, group_id,
-          submatches:team_match_submatches(
-            id, match_order, label,
-            player_a_name, player_b_name,
-            team_a_player_id, team_b_player_id,
-            team_a_player2_id, team_b_player2_id,
-            match_id,
-            scoring:match_id(id, player1_games, player2_games, status)
-          )
-        `)
-        .eq('tournament_id', tournamentId)
-        .order('round'),
-    ])
+    try {
+      // NO team_a:team_a_id / team_b:team_b_id FK joins — PostgREST collapses
+      // two aliases on the same table into one row, corrupting both.
+      // Teams are resolved at render time via teamById.
+      const [teamsRes, stageRes, matchesRes] = await Promise.all([
+        sb.from('teams')
+          .select('id, name, short_name, color, seed, doubles_p1_pos, doubles_p2_pos, team_players(id, name, position)')
+          .eq('tournament_id', tournamentId)
+          .order('created_at'),
+        sb.from('stages')
+          .select('id, config')
+          .eq('tournament_id', tournamentId)
+          .eq('stage_number', 1)
+          .maybeSingle(),
+        sb.from('team_matches')
+          .select('id, team_a_id, team_b_id, round, round_name, status, team_a_score, team_b_score, winner_team_id, group_id')
+          .eq('tournament_id', tournamentId)
+          .order('round'),
+      ])
 
-    // Discard stale response if a newer load has started
-    if (myId !== loadIdRef.current) return
+      if (myId !== loadIdRef.current) return
 
-    const stageData = stageRes.data as StageRow | null
-
-    // Build teamById from THIS fetch's teams data — always in sync with teamMatches
-    const teamList = (teamsRes.data ?? []).map(t => ({
-      ...t,
-      players: ((t.team_players ?? []) as TeamPlayer[]).sort((a, b) => a.position - b.position),
-    })) as TeamWithPlayers[]
-    const teamById = new Map(teamList.map(t => [t.id, t]))
-
-    const teamMatchList = (matchesRes.data ?? []).map(tm => ({
-      id:             (tm as any).id,
-      tournament_id:  (tm as any).tournament_id,
-      team_a_id:      (tm as any).team_a_id,
-      team_b_id:      (tm as any).team_b_id,
-      round:          (tm as any).round,
-      round_name:     (tm as any).round_name,
-      status:         (tm as any).status,
-      team_a_score:   (tm as any).team_a_score,
-      team_b_score:   (tm as any).team_b_score,
-      winner_team_id: (tm as any).winner_team_id,
-      group_id:       (tm as any).group_id,
-      submatches: ((tm as any).submatches ?? [])
-        .sort((a: Submatch, b: Submatch) => a.match_order - b.match_order),
-    })) as TeamMatchRich[]
-
-    // Load groups
-    let groupList: RRGroup[] = []
-    if (stageData) {
-      const { data: groupRows } = await supabase
-        .from('rr_groups').select('id, group_number, name')
-        .eq('stage_id', stageData.id).order('group_number')
-
-      const gIds = (groupRows ?? []).map(g => g.id)
-      const { data: memberRows } = gIds.length > 0
-        ? await supabase.from('team_rr_group_members').select('group_id, team_id').in('group_id', gIds)
+      // Load submatches separately — avoids any PostgREST multi-FK ambiguity
+      const matchIds = (matchesRes.data ?? []).map((m: any) => m.id)
+      const submatchRes = matchIds.length > 0
+        ? await sb.from('team_match_submatches')
+            .select('id, team_match_id, match_order, label, player_a_name, player_b_name, team_a_player_id, team_b_player_id, team_a_player2_id, team_b_player2_id, match_id')
+            .in('team_match_id', matchIds)
+            .order('match_order')
         : { data: [] }
 
-      const memberMap = new Map<string, string[]>()
-      for (const m of memberRows ?? []) {
-        const arr = memberMap.get(m.group_id) ?? []
-        arr.push(m.team_id)
-        memberMap.set(m.group_id, arr)
+      if (myId !== loadIdRef.current) return
+
+      // Load scoring separately for all submatch match_ids
+      const smMatchIds = (submatchRes.data ?? []).map((s: any) => s.match_id).filter(Boolean) as string[]
+      const scoringRes = smMatchIds.length > 0
+        ? await sb.from('matches')
+            .select('id, player1_games, player2_games, status, match_format')
+            .in('id', smMatchIds)
+        : { data: [] }
+
+      if (myId !== loadIdRef.current) return
+
+      const stageData = stageRes.data as StageRow | null
+
+      const teamList = (teamsRes.data ?? []).map((t: any) => ({
+        id: t.id, name: t.name, short_name: t.short_name, color: t.color,
+        seed: t.seed, doubles_p1_pos: t.doubles_p1_pos, doubles_p2_pos: t.doubles_p2_pos,
+        tournament_id: tournamentId, created_at: t.created_at ?? '',
+        players: ((t.team_players ?? []) as TeamPlayer[]).sort((a, b) => a.position - b.position),
+      })) as TeamWithPlayers[]
+
+      // Build teamById — keyed by UUID, stable within this fetch
+      const teamById = new Map(teamList.map(t => [t.id, t]))
+
+      // Index scoring by match_id
+      const scoringById = new Map((scoringRes.data ?? []).map((s: any) => [s.id, s]))
+
+      // Index submatches by team_match_id
+      const submatchesByMatch = new Map<string, Submatch[]>()
+      for (const sm of submatchRes.data ?? []) {
+        const s = sm as any
+        const arr = submatchesByMatch.get(s.team_match_id) ?? []
+        arr.push({
+          id:               s.id,
+          match_order:      s.match_order,
+          label:            s.label,
+          player_a_name:    s.player_a_name,
+          player_b_name:    s.player_b_name,
+          team_a_player_id: s.team_a_player_id,
+          team_b_player_id: s.team_b_player_id,
+          team_a_player2_id: s.team_a_player2_id,
+          team_b_player2_id: s.team_b_player2_id,
+          match_id:         s.match_id,
+          scoring:          s.match_id ? (scoringById.get(s.match_id) ?? null) : null,
+        })
+        submatchesByMatch.set(s.team_match_id, arr)
       }
-      groupList = (groupRows ?? []).map(g => ({
-        id: g.id, group_number: g.group_number, name: g.name,
-        teamIds: memberMap.get(g.id) ?? [],
-      }))
+
+      const teamMatchList = (matchesRes.data ?? []).map((m: any) => ({
+        id:             m.id,
+        tournament_id:  tournamentId,
+        team_a_id:      m.team_a_id,
+        team_b_id:      m.team_b_id,
+        round:          m.round,
+        round_name:     m.round_name,
+        status:         m.status,
+        team_a_score:   m.team_a_score,
+        team_b_score:   m.team_b_score,
+        winner_team_id: m.winner_team_id,
+        group_id:       m.group_id,
+        submatches:     (submatchesByMatch.get(m.id) ?? [])
+                          .sort((a, b) => a.match_order - b.match_order),
+      })) as TeamMatchRich[]
+
+      let groupList: RRGroup[] = []
+      if (stageData) {
+        const { data: groupRows } = await sb.from('rr_groups')
+          .select('id, group_number, name')
+          .eq('stage_id', stageData.id).order('group_number')
+
+        if (myId !== loadIdRef.current) return
+
+        const gIds = (groupRows ?? []).map(g => g.id)
+        const { data: memberRows } = gIds.length > 0
+          ? await sb.from('team_rr_group_members').select('group_id, team_id').in('group_id', gIds)
+          : { data: [] }
+
+        if (myId !== loadIdRef.current) return
+
+        const memberMap = new Map<string, string[]>()
+        for (const r of memberRows ?? []) {
+          const arr = memberMap.get(r.group_id) ?? []
+          arr.push(r.team_id)
+          memberMap.set(r.group_id, arr)
+        }
+        groupList = (groupRows ?? []).map(g => ({
+          id: g.id, group_number: g.group_number, name: g.name,
+          teamIds: memberMap.get(g.id) ?? [],
+        }))
+      }
+
+      if (myId !== loadIdRef.current) return
+
+      setSnap({ teams: teamList, teamMatches: teamMatchList, teamById, groups: groupList, stage: stageData })
+    } finally {
+      inflightRef.current = false
+      if (myId === loadIdRef.current) setLoading(false)
     }
-
-    // Discard again after the group fetch (async gap)
-    if (myId !== loadIdRef.current) return
-
-    // Single atomic state update — teams, matches, and teamById are always consistent
-    setSnap({ teams: teamList, teamMatches: teamMatchList, teamById, groups: groupList, stage: stageData })
-    setLoading(false)
   }, [tournamentId])
 
   useEffect(() => { loadData() }, [loadData])
 
+  // Realtime: debounced so rapid events collapse into one fetch
   useEffect(() => {
-    const debouncedLoad = () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current)
-      debounceRef.current = setTimeout(() => loadData(true), 300)
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const debounced = () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => loadData(true), 400)
     }
-    const channel = supabase
-      .channel(`team-group-${tournamentId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'teams',        filter: `tournament_id=eq.${tournamentId}` }, debouncedLoad)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'team_matches', filter: `tournament_id=eq.${tournamentId}` }, debouncedLoad)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'team_match_submatches' }, debouncedLoad)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'rr_groups' },  debouncedLoad)
+    const ch = sb.channel(`team-group-${tournamentId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'team_matches',         filter: `tournament_id=eq.${tournamentId}` }, debounced)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'team_match_submatches' }, debounced)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, debounced)
       .subscribe()
-    return () => {
-      supabase.removeChannel(channel)
-      if (debounceRef.current) clearTimeout(debounceRef.current)
-    }
+    return () => { sb.removeChannel(ch); if (timer) clearTimeout(timer) }
   }, [tournamentId, loadData])
 
   const { teams, teamMatches, teamById, groups, stage } = snap
@@ -993,7 +1032,8 @@ function RubberScorer({
   matchFormat:  MatchFormat
   onSaved:      () => void
 }) {
-  const supabase = createClient()
+  const sbRef = useRef(createClient())
+  const supabase = sbRef.current
   const [games,       setGames]    = useState<Array<{id:string;game_number:number;score1:number;score2:number}>>([])
   const [localScores, setLocal]    = useState<Record<number, GameLocal>>({})
   const [saving,      setSaving]   = useState(false)
