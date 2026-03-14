@@ -338,7 +338,9 @@ export async function updateSubmatchResult(
     .eq('id', submatch.team_match_id)
     .single()
   if (!teamMatch) return {}
-  if (teamMatch.status === 'complete') return {}
+  // NOTE: Do NOT return early if status === 'complete'.
+  // Edits to individual rubbers must always trigger a full recount so the
+  // team score and winner reflect the current state of all rubbers.
 
   // Step 3: recount ALL completed submatches for this team match from scratch.
   // This is idempotent — no matter how many times called, result is always correct.

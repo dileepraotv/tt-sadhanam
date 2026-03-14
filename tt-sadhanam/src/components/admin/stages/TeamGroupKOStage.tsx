@@ -945,48 +945,57 @@ function RubberScorer({
   matchFormat:  MatchFormat
   onSaved:      () => void
 }) {
-  const sbRef = useRef(createClient())
+  const sbRef    = useRef(createClient())
   const supabase = sbRef.current
-  const [games,       setGames]    = useState<Array<{id:string;game_number:number;score1:number;score2:number}>>([])
-  const [localScores, setLocal]    = useState<Record<number, GameLocal>>({})
-  const [saving,      setSaving]   = useState(false)
-  const [loadingG,    setLoadingG] = useState(true)
-  const [forceEdit,   setForceEdit] = useState(false)
-  // Per-rubber format selector — defaults to tournament format, user can override
-  const [activeFormat, setActiveFormat] = useState<MatchFormat>(propFormat)
-  const scoring = submatch.scoring
 
-  useEffect(() => {
+  const [games,        setGames]       = useState<Array<{id:string;game_number:number;score1:number;score2:number}>>([])
+  const [localScores,  setLocal]       = useState<Record<number, GameLocal>>({})
+  const [saving,       setSaving]      = useState(false)
+  const [loadingG,     setLoadingG]    = useState(true)
+  const [editMode,     setEditMode]    = useState(false)   // stays true until user saves/cancels
+  const [scoreErrors,  setScoreErrors] = useState<Record<number, string>>({})
+  const [activeFormat, setActiveFormat] = useState<MatchFormat>(propFormat)
+
+  // Load game scores from DB. Re-runs whenever submatch changes OR editMode activates.
+  const loadGames = useCallback(async () => {
     if (!submatch.match_id) { setLoadingG(false); return }
-    supabase.from('games').select('*').eq('match_id', submatch.match_id)
-      .order('game_number')
-      .then(({ data }) => {
-        const gs = data ?? []
-        setGames(gs)
-        const init: Record<number, GameLocal> = {}
-        for (const g of gs) init[g.game_number] = { s1: String(g.score1??''), s2: String(g.score2??'') }
-        setLocal(init)
-        setLoadingG(false)
-      })
+    setLoadingG(true)
+    const { data } = await supabase
+      .from('games').select('*').eq('match_id', submatch.match_id).order('game_number')
+    const gs = data ?? []
+    setGames(gs)
+    const init: Record<number, GameLocal> = {}
+    for (const g of gs) init[g.game_number] = { s1: String(g.score1 ?? ''), s2: String(g.score2 ?? '') }
+    setLocal(init)
+    setScoreErrors({})
+    setLoadingG(false)
   }, [submatch.match_id])
 
-  // When format changes, persist it to the match row so saveGameScore uses it
-  const handleFormatChange = async (fmt: MatchFormat) => {
-    setActiveFormat(fmt)
-    if (submatch.match_id) {
-      await updateMatchFormat(submatch.match_id, fmt)
-    }
+  // Load on mount and whenever submatch changes
+  useEffect(() => { loadGames() }, [loadGames])
+
+  // When user clicks Edit: reload fresh scores then enter edit mode
+  const handleEdit = async () => {
+    await loadGames()
+    setEditMode(true)
   }
 
-  // Always show exactly maxGames columns (all 5 for bo5, all 3 for bo3, all 7 for bo7)
-  const maxGames = activeFormat === 'bo3' ? 3 : activeFormat === 'bo7' ? 7 : 5
+  // Cancel edit — reload original scores and exit edit mode
+  const handleCancel = async () => {
+    await loadGames()
+    setEditMode(false)
+  }
 
-  const [scoreErrors, setScoreErrors] = useState<Record<number, string>>({})
+  const handleFormatChange = async (fmt: MatchFormat) => {
+    setActiveFormat(fmt)
+    if (submatch.match_id) await updateMatchFormat(submatch.match_id, fmt)
+  }
+
+  const maxGames = activeFormat === 'bo3' ? 3 : activeFormat === 'bo7' ? 7 : 5
 
   const handleScore = (gn: number, field: 'a' | 'b', val: string) => {
     setLocal(prev => {
       const updated = { ...prev, [gn]: { ...prev[gn] ?? { s1:'', s2:'' }, [field === 'a' ? 's1' : 's2']: val } }
-      // Validate immediately once both scores are filled
       const row = updated[gn]
       if (row.s1 !== '' && row.s2 !== '') {
         const s1 = parseInt(row.s1, 10), s2 = parseInt(row.s2, 10)
@@ -995,7 +1004,7 @@ function RubberScorer({
           setScoreErrors(prev => ({ ...prev, [gn]: err ?? '' }))
         }
       } else {
-        setScoreErrors(prev => { const n = {...prev}; delete n[gn]; return n })
+        setScoreErrors(prev => { const n = { ...prev }; delete n[gn]; return n })
       }
       return updated
     })
@@ -1004,61 +1013,82 @@ function RubberScorer({
   const handleSave = async () => {
     if (!submatch.match_id) return
 
-    // Validate all filled scores before sending to server
+    // Collect all filled entries in game order
     const entries = Array.from({ length: maxGames }, (_, i) => i + 1)
       .map(gn => ({ gn, sc: localScores[gn] }))
       .filter(({ sc }) => sc && !(sc.s1 === '' && sc.s2 === ''))
 
+    if (entries.length === 0) { toast({ title: 'Enter at least one game score', variant: 'warning' }); return }
+
+    // Validate TT rules first
     for (const { gn, sc } of entries) {
       const s1 = parseInt(sc!.s1, 10), s2 = parseInt(sc!.s2, 10)
       if (isNaN(s1) || isNaN(s2)) continue
-      const validErr = validateTTScore(s1, s2)
-      if (validErr) {
-        toast({ title: `Game ${gn}: ${validErr}`, variant: 'destructive' })
-        return
-      }
+      const err = validateTTScore(s1, s2)
+      if (err) { toast({ title: `Game ${gn}: ${err}`, variant: 'destructive' }); return }
     }
 
     setSaving(true)
+
+    // If editing a completed rubber: reset it first so the engine accepts new scores
+    if (editMode && submatch.scoring?.status === 'complete') {
+      // Reset: mark match as pending and delete existing game rows
+      const { deleteGameScore } = await import('@/lib/actions/matches')
+      for (const g of games) {
+        await deleteGameScore(g.id, submatch.match_id!)
+      }
+      // Also reset the match status to pending via a direct update
+      await supabase.from('matches').update({
+        status: 'pending', winner_id: null,
+        player1_games: 0, player2_games: 0,
+        completed_at: null,
+      }).eq('id', submatch.match_id)
+    }
+
+    // Save each game score in order
     for (const { gn, sc } of entries) {
       const s1 = parseInt(sc!.s1, 10), s2 = parseInt(sc!.s2, 10)
       if (isNaN(s1) || isNaN(s2)) continue
       const res = await saveGameScore(submatch.match_id, gn, s1, s2)
       if (!res.success) {
-        // If "cannot add" the rubber is already decided — stop silently
+        // "Cannot add" = rubber is already decided by these scores — stop here, not an error
         if (res.error?.includes('Cannot add') || res.error?.includes('already complete')) break
         toast({ title: `Game ${gn}: ${res.error}`, variant: 'destructive' })
         setSaving(false)
         return
       }
     }
-    toast({ title: 'Rubber scores saved', variant: 'success' })
+
     setSaving(false)
+    setEditMode(false)
+    toast({ title: 'Rubber scores saved', variant: 'success' })
     onSaved()
   }
 
-  // FIX: pass 'p1'/'p2' — these are the sentinels declareMatchWinner checks for team submatches
   const handleDeclareWinner = async (side: 'p1' | 'p2') => {
     if (!submatch.match_id) return
     setSaving(true)
     const res = await declareMatchWinner(submatch.match_id, side, 'declared')
     setSaving(false)
     if (!res.success) { toast({ title: res.error ?? 'Failed', variant: 'destructive' }); return }
+    setEditMode(false)
     toast({ title: 'Rubber result saved', variant: 'success' })
     onSaved()
   }
 
   if (loadingG) return <div className="text-xs text-muted-foreground py-2 px-3">Loading…</div>
 
-  const isComplete   = (scoring?.status === 'complete') && !forceEdit
-  const p1Wins       = scoring?.player1_games ?? 0
-  const p2Wins       = scoring?.player2_games ?? 0
+  const scoring    = submatch.scoring
+  const isDone     = scoring?.status === 'complete'
+  const showEntry  = !isDone || editMode
+  const p1Wins     = scoring?.player1_games ?? 0
+  const p2Wins     = scoring?.player2_games ?? 0
 
   return (
     <div className="mt-2 rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-3">
 
-      {/* Format selector */}
-      {!isComplete && (
+      {/* Format selector — only when entering/editing scores */}
+      {showEntry && (
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground font-medium">Format:</span>
           <div className="flex gap-0.5 p-0.5 bg-muted rounded-md">
@@ -1077,43 +1107,51 @@ function RubberScorer({
         </div>
       )}
 
-      {/* Score grid — always show maxGames columns */}
+      {/* Score grid */}
       <div className="overflow-x-auto">
         <div className="grid gap-1 min-w-0"
           style={{ gridTemplateColumns: `minmax(80px,1fr) repeat(${maxGames}, 48px)` }}>
-          {/* Header */}
           <div className="text-xs font-semibold text-muted-foreground py-1">Team</div>
           {Array.from({ length: maxGames }, (_, i) => (
             <div key={i} className="text-xs text-center font-mono text-muted-foreground py-1">{i+1}</div>
           ))}
-          {/* Team A row */}
+          {/* Team A */}
           <div className="text-xs font-medium py-1 truncate self-center">{teamA?.name ?? 'Team A'}</div>
           {Array.from({ length: maxGames }, (_, i) => {
             const gn = i + 1
+            const stored = games.find(g => g.game_number === gn)
             return (
               <input key={gn} type="number" min={0} max={99}
-                value={localScores[gn]?.s1 ?? ''}
+                value={showEntry ? (localScores[gn]?.s1 ?? '') : (stored ? String(stored.score1) : '')}
                 onChange={e => handleScore(gn, 'a', e.target.value)}
-                disabled={isComplete || saving}
-                className="w-full text-center text-sm py-1.5 rounded border border-border bg-background focus:outline-none focus:ring-1 focus:ring-orange-500/50 disabled:opacity-40 [appearance:textfield]"
+                disabled={!showEntry || saving}
+                className={cn(
+                  'w-full text-center text-sm py-1.5 rounded border bg-background focus:outline-none focus:ring-1 focus:ring-orange-500/50 [appearance:textfield]',
+                  !showEntry ? 'border-transparent bg-transparent opacity-60' : 'border-border',
+                  saving && 'opacity-40'
+                )}
               />
             )
           })}
-          {/* Team B row */}
+          {/* Team B */}
           <div className="text-xs font-medium py-1 truncate self-center">{teamB?.name ?? 'Team B'}</div>
           {Array.from({ length: maxGames }, (_, i) => {
             const gn = i + 1
+            const stored = games.find(g => g.game_number === gn)
             return (
               <input key={gn} type="number" min={0} max={99}
-                value={localScores[gn]?.s2 ?? ''}
+                value={showEntry ? (localScores[gn]?.s2 ?? '') : (stored ? String(stored.score2) : '')}
                 onChange={e => handleScore(gn, 'b', e.target.value)}
-                disabled={isComplete || saving}
-                className="w-full text-center text-sm py-1.5 rounded border border-border bg-background focus:outline-none focus:ring-1 focus:ring-orange-500/50 disabled:opacity-40 [appearance:textfield]"
+                disabled={!showEntry || saving}
+                className={cn(
+                  'w-full text-center text-sm py-1.5 rounded border bg-background focus:outline-none focus:ring-1 focus:ring-orange-500/50 [appearance:textfield]',
+                  !showEntry ? 'border-transparent bg-transparent opacity-60' : 'border-border',
+                  saving && 'opacity-40'
+                )}
               />
             )
           })}
         </div>
-        {/* Inline validation errors */}
         {Object.entries(scoreErrors).filter(([, e]) => e).map(([gn, err]) => (
           <p key={gn} className="text-xs text-destructive flex items-center gap-1 mt-1">
             <AlertTriangle className="h-3 w-3 shrink-0" /> Game {gn}: {err}
@@ -1121,25 +1159,31 @@ function RubberScorer({
         ))}
       </div>
 
-      {/* Result / actions */}
+      {/* Actions */}
       <div className="flex items-center gap-2 flex-wrap">
-        {isComplete ? (
+        {isDone && !editMode ? (
           <div className="flex items-center gap-2 flex-wrap">
             <span className="flex items-center gap-1.5 text-sm font-semibold text-emerald-600 dark:text-emerald-400">
               <Check className="h-3.5 w-3.5" />
               {p1Wins > p2Wins ? (teamA?.name ?? 'Team A') : (teamB?.name ?? 'Team B')} wins {p1Wins}–{p2Wins}
             </span>
-            <button onClick={() => setForceEdit(true)}
+            <button onClick={handleEdit} disabled={saving}
               className="text-xs text-muted-foreground hover:text-orange-500 underline transition-colors">
-              Edit
+              Edit scores
             </button>
           </div>
         ) : (
           <>
             <Button size="sm" onClick={handleSave} disabled={saving} className="gap-1.5 h-7 text-xs">
               {saving ? <span className="tt-spinner tt-spinner-sm" /> : <Check className="h-3 w-3" />}
-              Save Scores
+              {editMode ? 'Update Scores' : 'Save Scores'}
             </Button>
+            {editMode && (
+              <Button size="sm" variant="outline" onClick={handleCancel} disabled={saving}
+                className="h-7 text-xs">
+                Cancel
+              </Button>
+            )}
             <span className="text-xs text-muted-foreground">or declare:</span>
             <Button size="sm" variant="outline" onClick={() => handleDeclareWinner('p1')} disabled={saving}
               className="h-7 text-xs gap-1">
