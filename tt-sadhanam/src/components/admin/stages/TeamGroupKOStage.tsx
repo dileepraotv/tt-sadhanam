@@ -90,8 +90,7 @@ interface TeamMatchRich {
   team_b_score:   number
   winner_team_id: string | null
   group_id:       string | null
-  team_a:         (TeamWithPlayers & { players: TeamPlayer[] }) | null
-  team_b:         (TeamWithPlayers & { players: TeamPlayer[] }) | null
+  // team_a/team_b intentionally absent — look up via teamById from the teams list
   submatches:     Submatch[]
 }
 
@@ -136,9 +135,9 @@ function useTeamGroupData(tournamentId: string) {
   const loadData = async (silent = false) => {
     if (!silent) setLoading(true)
 
-    // 3 parallel queries — team_matches deliberately omits team_a/team_b FK joins.
-    // PostgREST collapses both aliases to the same row when two FKs point at the
-    // same table (team_a_id and team_b_id both → teams). Join in-memory instead.
+    // 3 parallel queries — NO team_a/team_b FK joins on team_matches.
+    // PostgREST collapses two aliases pointing at the same FK table into one row.
+    // Teams are looked up at render time from the separate teams list instead.
     const [teamsRes, stageRes, matchesRes] = await Promise.all([
       supabase
         .from('teams')
@@ -172,31 +171,26 @@ function useTeamGroupData(tournamentId: string) {
     const stageData = stageRes.data as StageRow | null
     setStage(stageData)
 
-    // Build team lookup first — used for in-memory join below
-    const teamList = (teamsRes.data ?? []).map(t => ({
+    setTeams((teamsRes.data ?? []).map(t => ({
       ...t,
       players: ((t.team_players ?? []) as TeamPlayer[]).sort((a, b) => a.position - b.position),
-    })) as TeamWithPlayers[]
-    setTeams(teamList)
+    })) as TeamWithPlayers[])
 
-    const teamById = new Map(teamList.map(t => [t.id, t]))
-
-    // In-memory join: look up team_a and team_b by their IDs
-    setTeamMatches((matchesRes.data ?? []).map(tm => {
-      const rawTm = tm as unknown as {
-        id: string; tournament_id: string; team_a_id: string; team_b_id: string
-        round: number; round_name: string | null; status: 'pending'|'live'|'complete'
-        team_a_score: number; team_b_score: number; winner_team_id: string | null
-        group_id: string | null
-        submatches?: Submatch[]
-      }
-      return {
-        ...rawTm,
-        team_a: teamById.get(rawTm.team_a_id) ?? null,
-        team_b: teamById.get(rawTm.team_b_id) ?? null,
-        submatches: (rawTm.submatches ?? []).sort((a, b) => a.match_order - b.match_order),
-      }
-    }) as TeamMatchRich[])
+    setTeamMatches((matchesRes.data ?? []).map(tm => ({
+      id:             (tm as any).id,
+      tournament_id:  (tm as any).tournament_id,
+      team_a_id:      (tm as any).team_a_id,
+      team_b_id:      (tm as any).team_b_id,
+      round:          (tm as any).round,
+      round_name:     (tm as any).round_name,
+      status:         (tm as any).status,
+      team_a_score:   (tm as any).team_a_score,
+      team_b_score:   (tm as any).team_b_score,
+      winner_team_id: (tm as any).winner_team_id,
+      group_id:       (tm as any).group_id,
+      submatches: ((tm as any).submatches ?? [])
+        .sort((a: Submatch, b: Submatch) => a.match_order - b.match_order),
+    })) as TeamMatchRich[])
 
     // Load groups + members if stage exists (explicit queries — no FK-embedded-select)
     if (stageData) {
@@ -1241,9 +1235,10 @@ function LineupEditor({
 // ─────────────────────────────────────────────────────────────────────────────
 
 function FixtureDetailPanel({
-  match, isCorbillon, tournament, loadData,
+  match, teamById, isCorbillon, tournament, loadData,
 }: {
   match:       TeamMatchRich
+  teamById:    Map<string, TeamWithPlayers>
   isCorbillon: boolean
   tournament:  { id: string; format: string }
   loadData:    () => void
@@ -1253,8 +1248,9 @@ function FixtureDetailPanel({
   const [savingLineup,   setSavingLineup]   = useState(false)
   const [lineupDirty,    setLineupDirty]    = useState(false)
 
-  const teamA  = match.team_a
-  const teamB  = match.team_b
+  // Always look up teams directly by ID — never trust cached team_a/team_b on match objects
+  const teamA  = teamById.get(match.team_a_id) ?? null
+  const teamB  = teamById.get(match.team_b_id) ?? null
   const isLocked = match.status === 'complete'
   const format = (tournament.format ?? 'bo5') as MatchFormat
 
@@ -1729,12 +1725,12 @@ function GroupsTab({
                                     <div className="flex-1 min-w-0 flex items-center gap-2 text-sm">
                                       <WinnerTrophy show={isComplete && m.winner_team_id === m.team_a_id} />
                                       <span className={cn('font-medium truncate', isComplete && m.winner_team_id !== m.team_a_id && 'text-muted-foreground')}>
-                                        {m.team_a?.name ?? '—'}
+                                        {teamById.get(m.team_a_id)?.name ?? '—'}
                                       </span>
                                       <span className="font-mono font-bold text-sm shrink-0">{m.team_a_score}–{m.team_b_score}</span>
                                       <WinnerTrophy show={isComplete && m.winner_team_id === m.team_b_id} />
                                       <span className={cn('font-medium truncate', isComplete && m.winner_team_id !== m.team_b_id && 'text-muted-foreground')}>
-                                        {m.team_b?.name ?? '—'}
+                                        {teamById.get(m.team_b_id)?.name ?? '—'}
                                       </span>
                                     </div>
                                     <div className="flex items-center gap-2 shrink-0">
@@ -1747,6 +1743,7 @@ function GroupsTab({
                                   {isExpM && (
                                     <FixtureDetailPanel
                                       match={m}
+                                      teamById={teamById}
                                       isCorbillon={isCorbillon}
                                       tournament={tournament}
                                       loadData={() => loadData(true)}
@@ -1831,7 +1828,7 @@ function GroupFixtureCard({ match, matchBase }: { match: TeamMatchRich; matchBas
         <div className="flex items-center gap-1.5 min-w-0">
           <WinnerTrophy show={isComplete && match.winner_team_id === match.team_a_id} />
           <span className={cn('font-medium truncate', isComplete && match.winner_team_id !== match.team_a_id && 'text-muted-foreground')}>
-            {match.team_a?.name ?? '—'}
+            {teamA?.name ?? '—'}
           </span>
         </div>
         <span className="text-xs font-mono font-bold shrink-0">
@@ -1840,7 +1837,7 @@ function GroupFixtureCard({ match, matchBase }: { match: TeamMatchRich; matchBas
         <div className="flex items-center gap-1.5 min-w-0">
           <WinnerTrophy show={isComplete && match.winner_team_id === match.team_b_id} />
           <span className={cn('font-medium truncate', isComplete && match.winner_team_id !== match.team_b_id && 'text-muted-foreground')}>
-            {match.team_b?.name ?? '—'}
+            {teamB?.name ?? '—'}
           </span>
         </div>
       </div>
@@ -1927,14 +1924,14 @@ function KnockoutTab({ tournament, teams, koMatches, matchBase, loadData, isCorb
                         <div className="flex-1 flex flex-col gap-1 min-w-0">
                           <div className={cn('flex items-center gap-2', isComplete && m.winner_team_id !== m.team_a_id && 'opacity-50')}>
                             <WinnerTrophy show={isComplete && m.winner_team_id === m.team_a_id} />
-                            <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: m.team_a?.color ?? '#888' }} />
-                            <span className="text-sm font-semibold flex-1 truncate">{m.team_a?.name ?? 'TBD'}</span>
+                            <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: teamById.get(m.team_a_id)?.color ?? '#888' }} />
+                            <span className="text-sm font-semibold flex-1 truncate">{teamById.get(m.team_a_id)?.name ?? 'TBD'}</span>
                             <span className="text-sm font-bold font-mono">{m.team_a_score}</span>
                           </div>
                           <div className={cn('flex items-center gap-2', isComplete && m.winner_team_id !== m.team_b_id && 'opacity-50')}>
                             <WinnerTrophy show={isComplete && m.winner_team_id === m.team_b_id} />
-                            <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: m.team_b?.color ?? '#888' }} />
-                            <span className="text-sm font-semibold flex-1 truncate">{m.team_b?.name ?? 'TBD'}</span>
+                            <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: teamById.get(m.team_b_id)?.color ?? '#888' }} />
+                            <span className="text-sm font-semibold flex-1 truncate">{teamById.get(m.team_b_id)?.name ?? 'TBD'}</span>
                             <span className="text-sm font-bold font-mono">{m.team_b_score}</span>
                           </div>
                         </div>
@@ -1948,6 +1945,7 @@ function KnockoutTab({ tournament, teams, koMatches, matchBase, loadData, isCorb
                       {expandedKO === m.id && (
                         <FixtureDetailPanel
                           match={m}
+                          teamById={teamById}
                           isCorbillon={isCorbillon}
                           tournament={tournament}
                           loadData={() => loadData(true)}
