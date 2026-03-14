@@ -314,7 +314,7 @@ export async function generateTeamGroups(
   const [groupsRes, teamsRes] = await Promise.all([
     supabase.from('rr_groups').select('id, group_number')
       .eq('stage_id', stageId).order('group_number'),
-    supabase.from('teams').select('id, seed')
+    supabase.from('teams').select('id, name, seed')
       .eq('tournament_id', tournamentId).order('created_at'),
   ])
 
@@ -376,33 +376,33 @@ export async function generateTeamGroupFixtures(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
-  // Load groups, members, and teams — 3 explicit queries (avoids FK-embedded-select issues)
+  // Load groups and teams in parallel — 2 queries.
+  // We DO NOT read team_rr_group_members from DB here; instead we re-run the
+  // snake assignment in-memory (same algorithm as generateTeamGroups). This is
+  // the only reliable way to guarantee fixtures match assignments regardless of
+  // PostgREST schema-cache state or replication lag.
   const [groupsRes, teamsRes] = await Promise.all([
     supabase.from('rr_groups').select('id, group_number')
       .eq('stage_id', stageId).order('group_number'),
     supabase.from('teams')
-      .select('id, name, team_players(id, name, position)')
-      .eq('tournament_id', tournamentId),
+      .select('id, name, seed, team_players(id, name, position)')
+      .eq('tournament_id', tournamentId).order('created_at'),
   ])
 
   const groups   = groupsRes.data ?? []
   const allTeams = teamsRes.data ?? []
   if (!groups.length) return { error: 'No groups found.' }
+  if (allTeams.length < 2) return { error: 'Need at least 2 teams.' }
 
-  // Explicit member load — never rely on embedded select for team_rr_group_members
-  const groupIds = groups.map(g => g.id)
-  const { data: membersRows } = await supabase
-    .from('team_rr_group_members')
-    .select('group_id, team_id')
-    .in('group_id', groupIds)
+  // Re-compute the snake assignment in-memory (identical algorithm to generateTeamGroups)
+  const seededT   = allTeams.filter(t => t.seed != null).sort((a, b) => (a.seed ?? 0) - (b.seed ?? 0))
+  const unseededT = allTeams.filter(t => t.seed == null).sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
+  const orderedIds = [...seededT, ...unseededT].map(t => t.id)
+  const buckets    = snakeAssign(orderedIds, groups.length)
 
-  // Build groupId → teamId[] map
+  // groupId → teamIds[]  (built from in-memory snake, same as what generateTeamGroups persists)
   const membersByGroup = new Map<string, string[]>()
-  for (const row of membersRows ?? []) {
-    const arr = membersByGroup.get(row.group_id) ?? []
-    arr.push(row.team_id)
-    membersByGroup.set(row.group_id, arr)
-  }
+  groups.forEach((g, i) => membersByGroup.set(g.id, buckets[i] ?? []))
 
   const teamById = new Map(allTeams.map(t => [t.id, t]))
   const defs     = submatchDefs(formatType)
@@ -556,17 +556,14 @@ export async function finalizeTeamGroups(
 
   if (!groups.length) return { error: 'No groups found.' }
 
-  // Explicit member load
-  const finalGroupIds = groups.map(g => g.id)
-  const { data: finalMembersRows } = await supabase
-    .from('team_rr_group_members')
-    .select('group_id, team_id')
-    .in('group_id', finalGroupIds)
-  const finalMembersByGroup = new Map<string, string[]>()
-  for (const row of finalMembersRows ?? []) {
-    const arr = finalMembersByGroup.get(row.group_id) ?? []
-    arr.push(row.team_id)
-    finalMembersByGroup.set(row.group_id, arr)
+  // Derive group membership from the team_matches themselves (group_id is set on each fixture).
+  // This is the most reliable source — no separate DB read needed, no FK-cache issues.
+  const finalMembersByGroup = new Map<string, Set<string>>()
+  for (const m of matches) {
+    if (!m.group_id) continue
+    const s = finalMembersByGroup.get(m.group_id) ?? new Set()
+    s.add(m.team_a_id); s.add(m.team_b_id)
+    finalMembersByGroup.set(m.group_id, s)
   }
 
   // Validate: all group matches complete
@@ -577,7 +574,7 @@ export async function finalizeTeamGroups(
   // Build qualifiers: top advanceCount from each group (in-memory)
   const qualifiers: Array<{ teamId: string; groupRank: number; groupNum: number }> = []
   for (const group of groups) {
-    const teamIds   = finalMembersByGroup.get(group.id) ?? []
+    const teamIds   = [...(finalMembersByGroup.get(group.id) ?? [])]
     const standings = computeGroupStandings(group.id, teamIds, matches)
     standings.slice(0, advanceCount).forEach((s, idx) => {
       qualifiers.push({ teamId: s.teamId, groupRank: idx + 1, groupNum: group.group_number })
