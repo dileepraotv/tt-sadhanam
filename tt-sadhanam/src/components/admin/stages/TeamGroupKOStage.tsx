@@ -1799,68 +1799,6 @@ function GroupsTab({
 }
 
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GroupFixtureCard — compact read-only fixture card for group view
-// ─────────────────────────────────────────────────────────────────────────────
-
-function GroupFixtureCard({ match, matchBase }: { match: TeamMatchRich; matchBase: string }) {
-  const isComplete = match.status === 'complete'
-  const isLive     = match.status === 'live'
-  const doneCount  = match.submatches.filter(s => s.scoring?.status === 'complete').length
-  const totalCount = match.submatches.length
-
-  const completedFirst = match.submatches.find(s => s.scoring?.status === 'complete')
-  const firstScoreUrl  = completedFirst?.match_id
-    ? `${matchBase}/${completedFirst.match_id}`
-    : null
-
-  // Find first incomplete or first submatch for linking
-  const linkSm = match.submatches.find(s => s.scoring?.status !== 'complete') ?? match.submatches[0]
-  const href   = linkSm?.match_id ? `${matchBase}/${linkSm.match_id}` : null
-
-  return (
-    <div className={cn(
-      'rounded-lg border px-3 py-2.5 flex items-center gap-3',
-      matchStatusClasses(match.status),
-    )}>
-      {/* Teams + score */}
-      <div className="flex-1 min-w-0 flex items-center gap-2 text-sm">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <WinnerTrophy show={isComplete && match.winner_team_id === match.team_a_id} />
-          <span className={cn('font-medium truncate', isComplete && match.winner_team_id !== match.team_a_id && 'text-muted-foreground')}>
-            {teamA?.name ?? '—'}
-          </span>
-        </div>
-        <span className="text-xs font-mono font-bold shrink-0">
-          {match.team_a_score} – {match.team_b_score}
-        </span>
-        <div className="flex items-center gap-1.5 min-w-0">
-          <WinnerTrophy show={isComplete && match.winner_team_id === match.team_b_id} />
-          <span className={cn('font-medium truncate', isComplete && match.winner_team_id !== match.team_b_id && 'text-muted-foreground')}>
-            {teamB?.name ?? '—'}
-          </span>
-        </div>
-      </div>
-
-      {/* Progress + link */}
-      <div className="flex items-center gap-2 shrink-0">
-        {isLive && (
-          <span className="text-xs font-semibold px-1.5 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-400">
-            LIVE
-          </span>
-        )}
-        <span className="text-xs text-muted-foreground">{doneCount}/{totalCount}</span>
-        {href && (
-          <a href={href}
-            className="text-xs font-medium text-orange-500 hover:text-orange-400 transition-colors whitespace-nowrap"
-          >
-            Score →
-          </a>
-        )}
-      </div>
-    </div>
-  )
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // KnockoutTab — shows the KO bracket for the team group+KO event
