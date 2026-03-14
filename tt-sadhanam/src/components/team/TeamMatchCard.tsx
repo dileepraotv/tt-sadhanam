@@ -72,8 +72,8 @@ export function TeamMatchCard({ teamMatch, subMatchScores }: Props) {
           )}
           <span className={cn(
             'font-semibold text-sm truncate',
-            aWon ? 'text-emerald-700 dark:text-emerald-400' : 'text-foreground',
-            bWon && 'text-muted-foreground',
+            aWon ? 'font-bold text-emerald-700 dark:text-emerald-400' : 'text-foreground',
+            bWon && 'font-normal text-muted-foreground',
           )}>
             {teamA?.short_name ?? teamA?.name ?? '?'}
           </span>
@@ -106,8 +106,8 @@ export function TeamMatchCard({ teamMatch, subMatchScores }: Props) {
         <div className="flex items-center gap-1.5 flex-1 min-w-0 justify-end">
           <span className={cn(
             'font-semibold text-sm truncate text-right',
-            bWon ? 'text-emerald-700 dark:text-emerald-400' : 'text-foreground',
-            aWon && 'text-muted-foreground',
+            bWon ? 'font-bold text-emerald-700 dark:text-emerald-400' : 'text-foreground',
+            aWon && 'font-normal text-muted-foreground',
           )}>
             {teamB?.short_name ?? teamB?.name ?? '?'}
           </span>
@@ -146,8 +146,8 @@ export function TeamMatchCard({ teamMatch, subMatchScores }: Props) {
                 {/* Player A */}
                 <span className={cn(
                   'text-xs flex-1 min-w-0 truncate',
-                  smAWon ? 'font-semibold text-emerald-700 dark:text-emerald-400' : 'text-foreground',
-                  smBWon && 'text-muted-foreground',
+                  smAWon ? 'font-bold text-emerald-700 dark:text-emerald-400' : 'text-foreground',
+                  smBWon && 'font-normal text-muted-foreground',
                 )}>
                   {sm.player_a_name ?? '—'}
                 </span>
@@ -177,8 +177,8 @@ export function TeamMatchCard({ teamMatch, subMatchScores }: Props) {
                 {/* Player B */}
                 <span className={cn(
                   'text-xs flex-1 min-w-0 truncate text-right',
-                  smBWon ? 'font-semibold text-emerald-700 dark:text-emerald-400' : 'text-foreground',
-                  smAWon && 'text-muted-foreground',
+                  smBWon ? 'font-bold text-emerald-700 dark:text-emerald-400' : 'text-foreground',
+                  smAWon && 'font-normal text-muted-foreground',
                 )}>
                   {sm.player_b_name ?? '—'}
                 </span>

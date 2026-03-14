@@ -30,6 +30,7 @@ import {
   generateTeamSwaythlingBracket,
 } from '@/lib/actions/teamLeague'
 import { useRouter } from 'next/navigation'
+import { RubberScorer } from '@/components/shared/RubberScorer'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -1495,6 +1496,7 @@ function TeamMatchBracketCard({
   // Auto-expand this card if the admin just came back from one of its sub-matches
   const isHighlighted = !!highlightFix && highlightFix === teamMatch.id
   const [open, setOpen]      = useState(isHighlighted)
+  const [expandedSub, setExpandedSub] = useState<string | null>(null)
   const [isPending, startTx] = useTransition()
   const { setLoading }       = useLoading()
   const router               = useRouter()
@@ -1598,7 +1600,7 @@ function TeamMatchBracketCard({
   return (
     <div className={cn(
       'rounded-2xl border overflow-hidden transition-all duration-150',
-      isDone  && 'bg-muted/20 border-border/40 opacity-80',
+      isDone  && 'bg-muted/10 border-border/40',
       isLive  && !isDone && 'bg-card border-orange-400 dark:border-orange-500 shadow-md shadow-orange-100 dark:shadow-orange-950/30',
       !isLive && !isDone && 'bg-card border-border',
       isHighlighted && 'ring-2 ring-orange-400/50',
@@ -1618,9 +1620,9 @@ function TeamMatchBracketCard({
                 <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: teamA?.color ?? '#F06321' }} />
                 <WinnerTrophy show={aWon} size="sm" />
                 <span className={cn('font-bold text-sm truncate',
-                  aWon && 'text-emerald-600 dark:text-emerald-400',
-                  bWon && 'text-muted-foreground',
-                  !aWon && !bWon && 'text-foreground',
+                  aWon && 'text-emerald-600 dark:text-emerald-400 font-bold',
+                  bWon && 'text-muted-foreground font-normal',
+                  !aWon && !bWon && 'text-foreground font-bold',
                 )}>
                   {teamA?.name ?? 'TBD'}
                 </span>
@@ -1648,9 +1650,9 @@ function TeamMatchBracketCard({
                 <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: teamB?.color ?? '#6366f1' }} />
                 <WinnerTrophy show={bWon} size="sm" />
                 <span className={cn('font-bold text-sm truncate',
-                  bWon && 'text-emerald-600 dark:text-emerald-400',
-                  aWon && 'text-muted-foreground',
-                  !aWon && !bWon && 'text-foreground',
+                  bWon && 'text-emerald-600 dark:text-emerald-400 font-bold',
+                  aWon && 'text-muted-foreground font-normal',
+                  !aWon && !bWon && 'text-foreground font-bold',
                 )}>
                   {teamB?.name ?? 'TBD'}
                 </span>
@@ -1794,7 +1796,7 @@ function TeamMatchBracketCard({
                       )}
                     </div>
 
-                    {/* Score + action */}
+                    {/* Score + inline scorer toggle */}
                     <div className="flex sm:flex-col sm:items-end items-center gap-2 sm:gap-1 pt-0.5">
                       {scoring && (
                         <div className={cn(
@@ -1808,14 +1810,9 @@ function TeamMatchBracketCard({
                           {smDone && <Check className="h-3 w-3 text-emerald-500 ml-0.5" />}
                         </div>
                       )}
-                      {scoreHref ? (
-                        autoSaving ? (
-                          <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg border border-border text-muted-foreground whitespace-nowrap">
-                            <Loader2 className="h-3 w-3 animate-spin" /> Saving…
-                          </span>
-                        ) : (
-                        <a
-                          href={scoreHref}
+                      {sm.match_id ? (
+                        <button
+                          onClick={() => setExpandedSub(expandedSub === sm.id ? null : sm.id)}
                           className={cn(
                             'inline-flex items-center justify-center text-xs font-semibold px-2.5 py-1 rounded-lg border transition-colors whitespace-nowrap',
                             smDone
@@ -1823,9 +1820,8 @@ function TeamMatchBracketCard({
                               : 'text-orange-500 border-orange-200 dark:border-orange-800/40 hover:bg-orange-50 dark:hover:bg-orange-950/30',
                           )}
                         >
-                          {smDone ? 'Edit →' : 'Score →'}
-                        </a>
-                        )
+                          {expandedSub === sm.id ? 'Close ↑' : smDone ? 'Edit →' : 'Score →'}
+                        </button>
                       ) : (
                         <span className="text-xs text-muted-foreground/40">—</span>
                       )}
@@ -1838,6 +1834,20 @@ function TeamMatchBracketCard({
                     {' '}vs{' '}
                     <span style={{ color: teamB?.color ?? '#6366f1' }}>{teamB?.short_name ?? teamB?.name ?? 'B'}</span>
                   </p>
+
+                  {/* Inline rubber scorer — shows when Score/Edit button is clicked */}
+                  {expandedSub === sm.id && sm.match_id && (
+                    <div className="mt-3 col-span-full">
+                      <RubberScorer
+                        submatch={sm}
+                        nameA={sm.player_a_name ?? (teamA?.name ?? 'Team A')}
+                        nameB={sm.player_b_name ?? (teamB?.name ?? 'Team B')}
+                        tournamentId={tournamentId}
+                        matchFormat={(teamMatch as any).match_format ?? 'bo5'}
+                        onSaved={() => setExpandedSub(null)}
+                      />
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -1893,6 +1903,7 @@ function TeamMatchAdminCard({
   highlightFix: string
 }) {
   const [open, setOpen]      = useState(teamMatch.id === highlightFix)
+  const [expandedSub, setExpandedSub] = useState<string | null>(null)
   const [isPending, startTx] = useTransition()
   const { setLoading }       = useLoading()
   const router               = useRouter()
@@ -1995,8 +2006,8 @@ function TeamMatchAdminCard({
           <span className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full shrink-0" style={{ background: teamA?.color ?? '#F06321' }} />
             <span className={cn('font-semibold text-sm',
-              aWon && 'text-emerald-600 dark:text-emerald-400',
-              bWon && 'text-muted-foreground',
+              aWon && 'text-emerald-600 dark:text-emerald-400 font-bold',
+              bWon && 'text-muted-foreground font-normal',
             )}>
               {teamA?.short_name ?? teamA?.name ?? '—'}
             </span>
@@ -2009,8 +2020,8 @@ function TeamMatchAdminCard({
           <span className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full shrink-0" style={{ background: teamB?.color ?? '#6366f1' }} />
             <span className={cn('font-semibold text-sm',
-              bWon && 'text-emerald-600 dark:text-emerald-400',
-              aWon && 'text-muted-foreground',
+              bWon && 'text-emerald-600 dark:text-emerald-400 font-bold',
+              aWon && 'text-muted-foreground font-normal',
             )}>
               {teamB?.short_name ?? teamB?.name ?? '—'}
             </span>

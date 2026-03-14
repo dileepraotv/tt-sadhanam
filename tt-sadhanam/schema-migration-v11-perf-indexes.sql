@@ -17,54 +17,54 @@
 -- ── 1. Unindexed foreign keys — highest impact ────────────────────────────────
 
 -- team_matches: team FK lookups (used in every team match join)
-CREATE INDEX IF NOT EXISTS idx_team_matches_team_a_id
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_team_matches_team_a_id
   ON team_matches (team_a_id);
 
-CREATE INDEX IF NOT EXISTS idx_team_matches_team_b_id
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_team_matches_team_b_id
   ON team_matches (team_b_id);
 
-CREATE INDEX IF NOT EXISTS idx_team_matches_winner_team_id
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_team_matches_winner_team_id
   ON team_matches (winner_team_id) WHERE winner_team_id IS NOT NULL;
 
 -- team_match_submatches: player FK lookups
-CREATE INDEX IF NOT EXISTS idx_team_match_submatches_team_a_player_id
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_team_match_submatches_team_a_player_id
   ON team_match_submatches (team_a_player_id) WHERE team_a_player_id IS NOT NULL;
 
-CREATE INDEX IF NOT EXISTS idx_team_match_submatches_team_b_player_id
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_team_match_submatches_team_b_player_id
   ON team_match_submatches (team_b_player_id) WHERE team_b_player_id IS NOT NULL;
 
-CREATE INDEX IF NOT EXISTS idx_team_match_submatches_team_a_player2_id
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_team_match_submatches_team_a_player2_id
   ON team_match_submatches (team_a_player2_id) WHERE team_a_player2_id IS NOT NULL;
 
-CREATE INDEX IF NOT EXISTS idx_team_match_submatches_team_b_player2_id
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_team_match_submatches_team_b_player2_id
   ON team_match_submatches (team_b_player2_id) WHERE team_b_player2_id IS NOT NULL;
 
 -- matches: player + winner FK lookups (hot path for all match queries)
-CREATE INDEX IF NOT EXISTS idx_matches_player1_id
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_matches_player1_id
   ON matches (player1_id) WHERE player1_id IS NOT NULL;
 
-CREATE INDEX IF NOT EXISTS idx_matches_player2_id
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_matches_player2_id
   ON matches (player2_id) WHERE player2_id IS NOT NULL;
 
-CREATE INDEX IF NOT EXISTS idx_matches_winner_id
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_matches_winner_id
   ON matches (winner_id) WHERE winner_id IS NOT NULL;
 
-CREATE INDEX IF NOT EXISTS idx_matches_loser_next_match_id
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_matches_loser_next_match_id
   ON matches (loser_next_match_id) WHERE loser_next_match_id IS NOT NULL;
 
 -- games: winner FK
-CREATE INDEX IF NOT EXISTS idx_games_winner_id
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_games_winner_id
   ON games (winner_id) WHERE winner_id IS NOT NULL;
 
 -- championships + tournaments: created_by FK (used in every RLS check)
-CREATE INDEX IF NOT EXISTS idx_championships_created_by
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_championships_created_by
   ON championships (created_by);
 
-CREATE INDEX IF NOT EXISTS idx_tournaments_created_by
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tournaments_created_by
   ON tournaments (created_by);
 
 -- bracket_slots: player FK
-CREATE INDEX IF NOT EXISTS idx_bracket_slots_player_id
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_bracket_slots_player_id
   ON bracket_slots (player_id) WHERE player_id IS NOT NULL;
 
 -- ── 2. Covering index for the hot team_matches query path ─────────────────────
@@ -72,7 +72,7 @@ CREATE INDEX IF NOT EXISTS idx_bracket_slots_player_id
 -- team_a_id, team_b_id, status, group_id. This covering index eliminates
 -- the heap fetch for all fields except the joined submatches.
 
-CREATE INDEX IF NOT EXISTS idx_team_matches_covering
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_team_matches_covering
   ON team_matches (tournament_id, round)
   INCLUDE (team_a_id, team_b_id, status, team_a_score, team_b_score, winner_team_id, group_id);
 
@@ -80,12 +80,12 @@ CREATE INDEX IF NOT EXISTS idx_team_matches_covering
 -- KO matches are always round >= 900 and group_id IS NULL. A partial index
 -- makes the KO tab load dramatically faster for large tournaments.
 
-CREATE INDEX IF NOT EXISTS idx_team_matches_ko_rounds
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_team_matches_ko_rounds
   ON team_matches (tournament_id, round)
   WHERE group_id IS NULL AND round >= 900;
 
 -- ── 4. Group fixtures partial index ──────────────────────────────────────────
-CREATE INDEX IF NOT EXISTS idx_team_matches_group_fixtures
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_team_matches_group_fixtures
   ON team_matches (tournament_id, group_id, round)
   WHERE group_id IS NOT NULL;
 

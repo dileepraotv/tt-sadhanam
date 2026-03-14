@@ -173,7 +173,7 @@ function PlayerRow({
           compact ? 'text-sm' : 'text-[15px]',
           isEmpty      ? 'text-muted-foreground/60 italic text-sm' : '',
           isWinner     ? 'font-bold text-foreground' : '',
-          isLoser      ? 'text-muted-foreground' : 'text-foreground',
+          isLoser      ? 'font-normal text-muted-foreground' : 'text-foreground font-semibold',
         )}>
           {name}
         </span>

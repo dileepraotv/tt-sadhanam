@@ -510,16 +510,35 @@ function ScoreboardHeader({ match, matchState, activeFormat, isComplete, isLive 
       <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:gap-4 px-3 sm:px-5 py-4 sm:py-6">
         <PlayerCol player={match.player1} games={matchState.player1Games} isWinner={p1Win} side="left" />
         <div className="flex flex-col items-center gap-1.5">
-          <div className="font-display text-3xl sm:text-5xl font-bold tracking-tight tabular-nums leading-none">
-            <span className={cn(matchState.player1Games > matchState.player2Games ? 'text-orange-600 dark:text-orange-400' : '')}>
+          <div className="font-display text-3xl sm:text-5xl font-black tracking-tight tabular-nums leading-none">
+            <span className={cn(
+              matchState.player1Games > matchState.player2Games
+                ? 'text-foreground'
+                : matchState.player1Games < matchState.player2Games
+                ? 'text-muted-foreground/50'
+                : 'text-foreground',
+            )}>
               {matchState.player1Games}
             </span>
-            <span className="text-muted-foreground mx-2 text-3xl">–</span>
-            <span className={cn(matchState.player2Games > matchState.player1Games ? 'text-orange-600 dark:text-orange-400' : '')}>
+            <span className="text-muted-foreground/30 mx-1 text-2xl">–</span>
+            <span className={cn(
+              matchState.player2Games > matchState.player1Games
+                ? 'text-foreground'
+                : matchState.player2Games < matchState.player1Games
+                ? 'text-muted-foreground/50'
+                : 'text-foreground',
+            )}>
               {matchState.player2Games}
             </span>
           </div>
-          <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">
+          <span className={cn(
+            'text-xs uppercase tracking-widest font-bold px-3 py-1 rounded-full',
+            isComplete
+              ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300'
+              : isLive
+              ? 'bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-400'
+              : 'bg-muted text-muted-foreground',
+          )}>
             {FORMAT_CONFIGS[activeFormat].label}
           </span>
         </div>
@@ -540,10 +559,19 @@ function PlayerCol({ player, games, isWinner, side }: {
   return (
     <div className={cn('flex flex-col gap-1.5', side === 'right' ? 'items-end text-right' : 'items-start')}>
       {player?.seed && <span className="seed-badge">{player.seed}</span>}
-      <span className={cn('font-display font-semibold tracking-wide text-sm sm:text-base leading-tight truncate max-w-full', isWinner && 'text-orange-600 dark:text-orange-400')}>
+      <span className={cn(
+        'font-display tracking-wide text-sm sm:text-base leading-tight truncate max-w-full transition-colors',
+        isWinner
+          ? 'font-bold text-foreground'
+          : 'font-normal text-muted-foreground',
+      )}>
         {player?.name ?? 'TBD'}
       </span>
-      {isWinner && <span className="text-[10px] font-bold uppercase tracking-widest text-orange-600/80">Winner ✓</span>}
+      {isWinner && (
+        <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/40 px-2 py-0.5 rounded-full">
+          🏆 Winner
+        </span>
+      )}
     </div>
   )
 }

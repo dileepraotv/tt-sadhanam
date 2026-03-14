@@ -233,7 +233,7 @@ export function PublicTeamGroupKOView({ tournament }: { tournament: Tournament }
                         : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
                       <span className="font-semibold text-sm">{group.name}</span>
                       <span className="text-xs text-muted-foreground hidden sm:inline">
-                        {group.teamIds.map(id => teamById.get(id)?.name ?? '?').join(' · ')}
+                        {group.teamIds.map(id => (teamById.get(id) as TeamRow | undefined)?.name ?? '?').join(' · ')}
                       </span>
                     </div>
                     <span className="text-xs text-muted-foreground">
@@ -258,7 +258,7 @@ export function PublicTeamGroupKOView({ tournament }: { tournament: Tournament }
                           </thead>
                           <tbody>
                             {standings.map((row, idx) => {
-                              const t  = teamById.get(row.teamId)
+                              const t  = teamById.get(row.teamId) as TeamRow | undefined
                               const adv = idx < advanceCount
                               return (
                                 <tr key={row.teamId} className={cn('border-b border-border/30', adv && 'bg-emerald-50/60 dark:bg-emerald-950/20')}>
@@ -465,16 +465,16 @@ function PublicKOCard({ match }: { match: TeamMatchRow }) {
         {/* Team A */}
         <div className={cn('flex items-center gap-2', isComplete && match.winner_team_id !== match.team_a_id && 'opacity-50')}>
           <WinnerTrophy show={isComplete && match.winner_team_id === match.team_a_id} />
-          <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: match.team_a?.color ?? '#888' }} />
-          <span className="text-sm font-semibold flex-1 truncate">{match.team_a?.name ?? 'TBD'}</span>
+          <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: (match.team_a as TeamRow | null)?.color ?? '#888' }} />
+          <span className={cn('text-sm flex-1 truncate', isComplete && match.winner_team_id === match.team_a_id ? 'font-bold text-foreground' : isComplete ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground')}>{match.team_a?.name ?? 'TBD'}</span>
           <span className="text-sm font-bold font-mono tabular-nums">{match.team_a_score}</span>
         </div>
         <div className="border-t border-border/30" />
         {/* Team B */}
         <div className={cn('flex items-center gap-2', isComplete && match.winner_team_id !== match.team_b_id && 'opacity-50')}>
           <WinnerTrophy show={isComplete && match.winner_team_id === match.team_b_id} />
-          <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: match.team_b?.color ?? '#888' }} />
-          <span className="text-sm font-semibold flex-1 truncate">{match.team_b?.name ?? 'TBD'}</span>
+          <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: (match.team_b as TeamRow | null)?.color ?? '#888' }} />
+          <span className={cn('text-sm flex-1 truncate', isComplete && match.winner_team_id === (match.team_b as TeamRow | null)?.id ? 'font-bold text-foreground' : isComplete ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground')}>{match.team_b?.name ?? 'TBD'}</span>
           <span className="text-sm font-bold font-mono tabular-nums">{match.team_b_score}</span>
         </div>
         <div className="flex items-center justify-between border-t border-border/20 pt-1.5">

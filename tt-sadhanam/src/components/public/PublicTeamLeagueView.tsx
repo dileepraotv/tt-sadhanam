@@ -253,7 +253,7 @@ export function PublicTeamLeagueView({ tournament }: Props) {
       {/* Fixtures */}
       <div className="flex flex-col gap-2">
         <h2 className="text-sm font-bold text-muted-foreground uppercase tracking-wider px-1">Fixtures</h2>
-        {fixturesByRound.map(([round, fixtures]) => {
+        {fixturesByRound.map(([round, fixtures]: [number, typeof fixturesByRound[0][1]]) => {
           const isOpen = openRounds.has(round)
           const done   = fixtures.filter(f => f.status === 'complete').length
           const live   = fixtures.filter(f => f.status === 'live').length

@@ -68,13 +68,13 @@ export function matchStatusClasses(
 
   if (variant === 'subtle') {
     if (isLive)     return 'bg-orange-50/60 dark:bg-orange-950/20'
-    if (isComplete) return 'bg-muted/20 opacity-80'
+    if (isComplete) return 'bg-muted/10'
     return ''
   }
 
   // 'card' variant
   if (isLive)     return 'border-orange-400/70 bg-orange-50/50 dark:bg-orange-950/15 shadow-sm shadow-orange-200/40 dark:shadow-orange-900/20'
-  if (isComplete) return 'border-border/40 bg-muted/20 opacity-80'
+  if (isComplete) return 'border-border/40 bg-muted/10'
   return 'border-border bg-card'
 }
 
@@ -122,7 +122,7 @@ export const T = {
   /** Match name — winning side */
   matchNameWin: 'text-sm font-semibold truncate text-emerald-600 dark:text-emerald-400',
   /** Match name — losing side */
-  matchNameLoss: 'text-sm font-semibold truncate text-muted-foreground',
+  matchNameLoss: 'text-sm truncate text-muted-foreground font-normal',
   /** Score display — large centered score */
   score:        'font-mono font-bold tabular-nums text-base',
   /** Score display — muted (not yet played) */

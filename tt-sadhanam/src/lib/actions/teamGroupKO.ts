@@ -91,9 +91,12 @@ function buildSubmatchRows(
       id:            matchId,
       tournament_id: tournamentId,
       round:         roundN,
-      // Use offset from 900 to stay within smallint range (max 32767).
-      // roundN is 900..915, so (roundN-900)*200 + tmIndex*10 + sm.order fits easily.
-      match_number:  (roundN - 900) * 200 + tmIndex * 10 + sm.order,
+      // Group rounds (1–899): use roundN * 100 to avoid negative values.
+      // KO rounds (900+): use (roundN-900)*200 offset so values stay positive.
+      // Both formulas produce unique positive match_numbers within their domain.
+      match_number:  roundN >= 900
+        ? (roundN - 900) * 200 + tmIndex * 10 + sm.order
+        : roundN * 100 + tmIndex * 10 + sm.order,
       round_name:    `${roundLabel} — ${sm.label}`,
       player1_id:    null,
       player2_id:    null,
@@ -463,8 +466,8 @@ export async function generateTeamGroupFixtures(
         )
 
         // Pre-populate player assignments from team rosters
-        const aPlayers = (teamA?.team_players ?? []).sort((p: any, q: any) => p.position - q.position)
-        const bPlayers = (teamB?.team_players ?? []).sort((p: any, q: any) => p.position - q.position)
+        const aPlayers = ((teamA as any)?.team_players ?? []).sort((p: any, q: any) => p.position - q.position)
+        const bPlayers = ((teamB as any)?.team_players ?? []).sort((p: any, q: any) => p.position - q.position)
 
         // Position mapping per rubber (1-indexed positions):
         // Corbillon: S1(1vs1), S2(2vs2), D(1+2 vs 1+2), S3(1vs2), S4(2vs1)
@@ -679,6 +682,7 @@ export async function finalizeTeamGroups(
         status:        'pending',
         team_a_score:  0,
         team_b_score:  0,
+        slot_index:    tmIndex,  // position within round — used for deterministic winner propagation
       })
 
       const { submatchRows, scoringRows } = buildSubmatchRows(

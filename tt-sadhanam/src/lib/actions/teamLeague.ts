@@ -747,6 +747,7 @@ export async function generateTeamRRKnockout(
       team_a_id: teamAId, team_b_id: teamBId,
       round: 900, round_name: `KO:Semi-Final ${i + 1}`,
       status: 'pending', team_a_score: 0, team_b_score: 0,
+      slot_index: i,
     })
     buildSubmatches(tmId, 900, `Semi-Final ${i + 1}`, i)
   }
@@ -760,6 +761,7 @@ export async function generateTeamRRKnockout(
     team_a_id: finalTeamA, team_b_id: finalTeamB,
     round: 901, round_name: 'KO:Final',
     status: 'pending', team_a_score: 0, team_b_score: 0,
+    slot_index: 0,
   })
   buildSubmatches(finalId, 901, 'Final', 0)
 
@@ -977,6 +979,7 @@ export async function generateTeamKOBracket(
       if (m.isBye) continue  // skip BYE matches
       teamMatchRows.push({
         id: m.tmId, tournament_id: tournamentId,
+        slot_index: tmIndex,  // deterministic bracket ordering
         team_a_id: m.slotA?.id ?? null,
         team_b_id: m.slotB?.id ?? null,
         round: m.roundN,
@@ -1039,13 +1042,16 @@ export async function updateTeamKOWinner(
   const nextRound    = currentRound + 1
 
   // Check if there are any KO matches in the next round
+  // Order by slot_index (stored during bracket generation) for deterministic ordering.
+  // Fall back to id ordering if slot_index is missing (older data).
   const { data: nextRoundMatches } = await supabase
     .from('team_matches')
-    .select('id, team_a_id, team_b_id')
+    .select('id, team_a_id, team_b_id, slot_index')
     .eq('tournament_id', tournamentId)
     .eq('round', nextRound)
     .is('group_id', null)
-    .order('created_at')
+    .order('slot_index', { nullsFirst: true })
+    .order('id')
 
   if (!nextRoundMatches || nextRoundMatches.length === 0) {
     // No next round → this was the final, nothing to propagate
@@ -1053,14 +1059,15 @@ export async function updateTeamKOWinner(
     return {}
   }
 
-  // Find the position of this match within its round (0-based)
+  // Find the position of this match within its round (0-based) using slot_index
   const { data: currentRoundMatches } = await supabase
     .from('team_matches')
-    .select('id')
+    .select('id, slot_index')
     .eq('tournament_id', tournamentId)
     .eq('round', currentRound)
     .is('group_id', null)
-    .order('created_at')
+    .order('slot_index', { nullsFirst: true })
+    .order('id')
 
   const position = (currentRoundMatches ?? []).findIndex(m => m.id === teamMatchId)
   if (position === -1) {
@@ -1262,6 +1269,7 @@ export async function generateTeamSwaythlingBracket(
       if (m.isBye) continue
       teamMatchRows.push({
         id: m.tmId, tournament_id: tournamentId,
+        slot_index: tmIndex,  // deterministic bracket ordering
         team_a_id: m.slotA?.id ?? null,
         team_b_id: m.slotB?.id ?? null,
         round: m.roundN,
