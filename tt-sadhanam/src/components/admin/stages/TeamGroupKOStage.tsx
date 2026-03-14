@@ -136,7 +136,9 @@ function useTeamGroupData(tournamentId: string) {
   const loadData = async (silent = false) => {
     if (!silent) setLoading(true)
 
-    // 3 parallel queries
+    // 3 parallel queries — team_matches deliberately omits team_a/team_b FK joins.
+    // PostgREST collapses both aliases to the same row when two FKs point at the
+    // same table (team_a_id and team_b_id both → teams). Join in-memory instead.
     const [teamsRes, stageRes, matchesRes] = await Promise.all([
       supabase
         .from('teams')
@@ -152,16 +154,15 @@ function useTeamGroupData(tournamentId: string) {
       supabase
         .from('team_matches')
         .select(`
-          *,
-          team_a:team_a_id(id,name,short_name,color,team_players(id,name,position)),
-          team_b:team_b_id(id,name,short_name,color,team_players(id,name,position)),
+          id, tournament_id, team_a_id, team_b_id, round, round_name,
+          status, team_a_score, team_b_score, winner_team_id, group_id,
           submatches:team_match_submatches(
-            id,match_order,label,
-            player_a_name,player_b_name,
-            team_a_player_id,team_b_player_id,
-            team_a_player2_id,team_b_player2_id,
+            id, match_order, label,
+            player_a_name, player_b_name,
+            team_a_player_id, team_b_player_id,
+            team_a_player2_id, team_b_player2_id,
             match_id,
-            scoring:match_id(id,player1_games,player2_games,status)
+            scoring:match_id(id, player1_games, player2_games, status)
           )
         `)
         .eq('tournament_id', tournamentId)
@@ -171,26 +172,31 @@ function useTeamGroupData(tournamentId: string) {
     const stageData = stageRes.data as StageRow | null
     setStage(stageData)
 
-    setTeams((teamsRes.data ?? []).map(t => ({
+    // Build team lookup first — used for in-memory join below
+    const teamList = (teamsRes.data ?? []).map(t => ({
       ...t,
       players: ((t.team_players ?? []) as TeamPlayer[]).sort((a, b) => a.position - b.position),
-    })) as TeamWithPlayers[])
+    })) as TeamWithPlayers[]
+    setTeams(teamList)
 
-    setTeamMatches((matchesRes.data ?? []).map(tm => ({
-      ...tm,
-      team_a: tm.team_a ? {
-        ...tm.team_a,
-        players: (((tm.team_a as unknown as { team_players?: TeamPlayer[] }).team_players) ?? [])
-          .sort((a: TeamPlayer, b: TeamPlayer) => a.position - b.position),
-      } : null,
-      team_b: tm.team_b ? {
-        ...tm.team_b,
-        players: (((tm.team_b as unknown as { team_players?: TeamPlayer[] }).team_players) ?? [])
-          .sort((a: TeamPlayer, b: TeamPlayer) => a.position - b.position),
-      } : null,
-      submatches: ((tm as unknown as { submatches?: Submatch[] }).submatches ?? [])
-        .sort((a, b) => a.match_order - b.match_order),
-    })) as unknown as TeamMatchRich[])
+    const teamById = new Map(teamList.map(t => [t.id, t]))
+
+    // In-memory join: look up team_a and team_b by their IDs
+    setTeamMatches((matchesRes.data ?? []).map(tm => {
+      const rawTm = tm as unknown as {
+        id: string; tournament_id: string; team_a_id: string; team_b_id: string
+        round: number; round_name: string | null; status: 'pending'|'live'|'complete'
+        team_a_score: number; team_b_score: number; winner_team_id: string | null
+        group_id: string | null
+        submatches?: Submatch[]
+      }
+      return {
+        ...rawTm,
+        team_a: teamById.get(rawTm.team_a_id) ?? null,
+        team_b: teamById.get(rawTm.team_b_id) ?? null,
+        submatches: (rawTm.submatches ?? []).sort((a, b) => a.match_order - b.match_order),
+      }
+    }) as TeamMatchRich[])
 
     // Load groups + members if stage exists (explicit queries — no FK-embedded-select)
     if (stageData) {
