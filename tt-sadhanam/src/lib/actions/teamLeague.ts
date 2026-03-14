@@ -322,50 +322,60 @@ export async function updateSubmatchResult(
 ): Promise<{ error?: string }> {
   const supabase = createClient()
 
-  // Single query: get the submatch + its parent team_match + scoring data together.
-  // This replaces 4 sequential round-trips with 2 parallel ones.
-  const [submatchRes, scoringRes] = await Promise.all([
-    supabase
-      .from('team_match_submatches')
-      .select('id, team_match_id, team_a_player_id, team_b_player_id, team_match:team_match_id(id, team_a_id, team_b_id, team_a_score, team_b_score, status)')
-      .eq('match_id', scoringMatchId)
-      .single(),
-    supabase
-      .from('matches')
-      .select('player1_games, player2_games, status')
-      .eq('id', scoringMatchId)
-      .single(),
-  ])
-
-  const submatch    = submatchRes.data
-  const scoringMatch = scoringRes.data
+  // Step 1: find the submatch row to get its parent team_match_id
+  const { data: submatch } = await supabase
+    .from('team_match_submatches')
+    .select('id, team_match_id')
+    .eq('match_id', scoringMatchId)
+    .single()
   if (!submatch) return {}  // not a team submatch
-  if (!scoringMatch || scoringMatch.status !== 'complete') return {}
 
-  const teamMatch = submatch.team_match as unknown as {
-    id: string; team_a_id: string; team_b_id: string;
-    team_a_score: number; team_b_score: number; status: string
-  } | null
-  if (!teamMatch || teamMatch.status === 'complete') return {}
+  // Step 2: load the parent team_match (flat, no FK joins)
+  const { data: teamMatch } = await supabase
+    .from('team_matches')
+    .select('id, team_a_id, team_b_id, status')
+    .eq('id', submatch.team_match_id)
+    .single()
+  if (!teamMatch) return {}
+  // If already complete, re-check whether we need to propagate KO winner
+  // but don't recount (avoids double-propagation)
+  if (teamMatch.status === 'complete') return {}
 
-  const winnerIsTeamA = scoringMatch.player1_games > scoringMatch.player2_games
+  // Step 3: recount ALL completed submatches for this team match from scratch.
+  // This is idempotent — no matter how many times called, result is always correct.
+  const { data: allSMs } = await supabase
+    .from('team_match_submatches')
+    .select('match_id')
+    .eq('team_match_id', submatch.team_match_id)
+  const smMatchIds = (allSMs ?? []).map(s => s.match_id).filter(Boolean) as string[]
 
-  const newScoreA = teamMatch.team_a_score + (winnerIsTeamA ? 1 : 0)
-  const newScoreB = teamMatch.team_b_score + (winnerIsTeamA ? 0 : 1)
-  const winsNeeded = 3  // first to 3 of 5
+  let scoreA = 0, scoreB = 0
+  if (smMatchIds.length > 0) {
+    const { data: allScoring } = await supabase
+      .from('matches')
+      .select('id, player1_games, player2_games, status')
+      .in('id', smMatchIds)
+    for (const s of allScoring ?? []) {
+      if (s.status !== 'complete') continue
+      if ((s.player1_games ?? 0) > (s.player2_games ?? 0)) scoreA++
+      else if ((s.player2_games ?? 0) > (s.player1_games ?? 0)) scoreB++
+    }
+  }
 
-  const isComplete = newScoreA >= winsNeeded || newScoreB >= winsNeeded
-  const winnerId   = isComplete ? (newScoreA >= winsNeeded ? teamMatch.team_a_id : teamMatch.team_b_id) : null
+  const winsNeeded = 3  // best of 5 — first to 3
+  const isComplete = scoreA >= winsNeeded || scoreB >= winsNeeded
+  const winnerId   = isComplete
+    ? (scoreA >= winsNeeded ? teamMatch.team_a_id : teamMatch.team_b_id)
+    : null
 
   await supabase.from('team_matches').update({
-    team_a_score:   newScoreA,
-    team_b_score:   newScoreB,
+    team_a_score:   scoreA,
+    team_b_score:   scoreB,
     status:         isComplete ? 'complete' : 'live',
     winner_team_id: winnerId,
     completed_at:   isComplete ? new Date().toISOString() : null,
   }).eq('id', submatch.team_match_id)
 
-  // Propagate winner to the next KO round when team match completes
   if (isComplete && winnerId) {
     await updateTeamKOWinner(tournamentId, submatch.team_match_id, winnerId)
   }

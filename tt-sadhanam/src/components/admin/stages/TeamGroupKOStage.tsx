@@ -83,6 +83,11 @@ interface TeamMatchRich {
   id:             string
   team_a_id:      string
   team_b_id:      string
+  // Team display data embedded at load time — never needs a runtime lookup
+  team_a_name:    string
+  team_b_name:    string
+  team_a_color:   string
+  team_b_color:   string
   round:          number
   round_name:     string | null
   status:         'pending' | 'live' | 'complete'
@@ -90,7 +95,6 @@ interface TeamMatchRich {
   team_b_score:   number
   winner_team_id: string | null
   group_id:       string | null
-  // team_a/team_b intentionally absent — look up via teamById from the teams list
   submatches:     Submatch[]
 }
 
@@ -124,175 +128,174 @@ function pickColor(i: number) { return TEAM_COLORS[i % TEAM_COLORS.length] }
 // Data hook — loads teams, stage, groups, and team_matches in parallel
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Atomic snapshot so teams and teamMatches are always from the same fetch
-interface DataSnapshot {
-  teams:       TeamWithPlayers[]
-  teamMatches: TeamMatchRich[]
-  teamById:    Map<string, TeamWithPlayers>
-  groups:      RRGroup[]
-  stage:       StageRow | null
-}
-
+// useTeamGroupData — stable supabase ref, flat queries, team names embedded in matches
 function useTeamGroupData(tournamentId: string) {
-  // Stable supabase ref — never recreated, no closure-capture issues
-  const sbRef = useRef(createClient())
-  const sb    = sbRef.current
+  // ONE stable client for the lifetime of this component tree
+  const sbRef     = useRef(createClient())
+  const sb        = sbRef.current
 
-  const [snap,    setSnap]    = useState<DataSnapshot>({
-    teams: [], teamMatches: [], teamById: new Map(), groups: [], stage: null,
-  })
-  const [loading, setLoading] = useState(true)
+  const [teams,       setTeams]       = useState<TeamWithPlayers[]>([])
+  const [teamMatches, setTeamMatches] = useState<TeamMatchRich[]>([])
+  const [groups,      setGroups]      = useState<RRGroup[]>([])
+  const [stage,       setStage]       = useState<StageRow | null>(null)
+  const [loading,     setLoading]     = useState(true)
 
-  // Load-ID guard: only the latest outstanding request may commit results
-  const loadIdRef    = useRef(0)
-  const inflightRef  = useRef(false)
+  // Generation counter: only the most recent fetch may commit
+  const genRef     = useRef(0)
+  const inflightRef = useRef(false)
 
   const loadData = useCallback(async (silent = false) => {
-    // If already loading (explicit call), skip — Realtime will catch up
-    if (!silent && inflightRef.current) return
-    const myId = ++loadIdRef.current
+    // Drop concurrent calls — Realtime debounce ensures we catch up
+    if (inflightRef.current && silent) return
+    const gen = ++genRef.current
     inflightRef.current = true
     if (!silent) setLoading(true)
 
     try {
-      // NO team_a:team_a_id / team_b:team_b_id FK joins — PostgREST collapses
-      // two aliases on the same table into one row, corrupting both.
-      // Teams are resolved at render time via teamById.
-      const [teamsRes, stageRes, matchesRes] = await Promise.all([
-        sb.from('teams')
-          .select('id, name, short_name, color, seed, doubles_p1_pos, doubles_p2_pos, team_players(id, name, position)')
-          .eq('tournament_id', tournamentId)
-          .order('created_at'),
-        sb.from('stages')
-          .select('id, config')
-          .eq('tournament_id', tournamentId)
-          .eq('stage_number', 1)
-          .maybeSingle(),
-        sb.from('team_matches')
-          .select('id, team_a_id, team_b_id, round, round_name, status, team_a_score, team_b_score, winner_team_id, group_id')
-          .eq('tournament_id', tournamentId)
-          .order('round'),
-      ])
+      // ── Fetch 1: teams + their players ─────────────────────────────────────
+      const { data: rawTeams } = await sb
+        .from('teams')
+        .select('id, name, short_name, color, seed, doubles_p1_pos, doubles_p2_pos, team_players(id, name, position)')
+        .eq('tournament_id', tournamentId)
+        .order('created_at')
+      if (gen !== genRef.current) return
 
-      if (myId !== loadIdRef.current) return
+      // Build a plain lookup — key is UUID, value is team display data
+      // This map is LOCAL to this fetch and never shared with any state
+      const tById = new Map((rawTeams ?? []).map((t: any) => [t.id as string, t]))
 
-      // Load submatches separately — avoids any PostgREST multi-FK ambiguity
-      const matchIds = (matchesRes.data ?? []).map((m: any) => m.id)
-      const submatchRes = matchIds.length > 0
+      const teamList: TeamWithPlayers[] = (rawTeams ?? []).map((t: any) => ({
+        id: t.id, name: t.name, short_name: t.short_name, color: t.color,
+        seed: t.seed, doubles_p1_pos: t.doubles_p1_pos, doubles_p2_pos: t.doubles_p2_pos,
+        tournament_id: tournamentId, created_at: t.created_at ?? '',
+        players: ((t.team_players ?? []) as TeamPlayer[]).sort((a, b) => a.position - b.position),
+      }))
+
+      // ── Fetch 2: team_matches (IDs + scores only, NO FK joins) ─────────────
+      const { data: rawMatches } = await sb
+        .from('team_matches')
+        .select('id, team_a_id, team_b_id, round, round_name, status, team_a_score, team_b_score, winner_team_id, group_id')
+        .eq('tournament_id', tournamentId)
+        .order('round')
+      if (gen !== genRef.current) return
+
+      const matchIds = (rawMatches ?? []).map((m: any) => m.id as string)
+
+      // ── Fetch 3: submatches (flat, no joins) ───────────────────────────────
+      const { data: rawSMs } = matchIds.length > 0
         ? await sb.from('team_match_submatches')
             .select('id, team_match_id, match_order, label, player_a_name, player_b_name, team_a_player_id, team_b_player_id, team_a_player2_id, team_b_player2_id, match_id')
             .in('team_match_id', matchIds)
             .order('match_order')
         : { data: [] }
+      if (gen !== genRef.current) return
 
-      if (myId !== loadIdRef.current) return
-
-      // Load scoring separately for all submatch match_ids
-      const smMatchIds = (submatchRes.data ?? []).map((s: any) => s.match_id).filter(Boolean) as string[]
-      const scoringRes = smMatchIds.length > 0
+      // ── Fetch 4: rubber scoring (flat, no joins) ───────────────────────────
+      const smMatchIds = ((rawSMs ?? []) as any[]).map(s => s.match_id).filter(Boolean) as string[]
+      const { data: rawScoring } = smMatchIds.length > 0
         ? await sb.from('matches')
             .select('id, player1_games, player2_games, status, match_format')
             .in('id', smMatchIds)
         : { data: [] }
+      if (gen !== genRef.current) return
 
-      if (myId !== loadIdRef.current) return
+      // ── Build scoring index ────────────────────────────────────────────────
+      const scoringIdx = new Map(((rawScoring ?? []) as any[]).map(s => [s.id as string, s]))
 
-      const stageData = stageRes.data as StageRow | null
-
-      const teamList = (teamsRes.data ?? []).map((t: any) => ({
-        id: t.id, name: t.name, short_name: t.short_name, color: t.color,
-        seed: t.seed, doubles_p1_pos: t.doubles_p1_pos, doubles_p2_pos: t.doubles_p2_pos,
-        tournament_id: tournamentId, created_at: t.created_at ?? '',
-        players: ((t.team_players ?? []) as TeamPlayer[]).sort((a, b) => a.position - b.position),
-      })) as TeamWithPlayers[]
-
-      // Build teamById — keyed by UUID, stable within this fetch
-      const teamById = new Map(teamList.map(t => [t.id, t]))
-
-      // Index scoring by match_id
-      const scoringById = new Map((scoringRes.data ?? []).map((s: any) => [s.id, s]))
-
-      // Index submatches by team_match_id
-      const submatchesByMatch = new Map<string, Submatch[]>()
-      for (const sm of submatchRes.data ?? []) {
-        const s = sm as any
-        const arr = submatchesByMatch.get(s.team_match_id) ?? []
-        arr.push({
-          id:               s.id,
-          match_order:      s.match_order,
-          label:            s.label,
-          player_a_name:    s.player_a_name,
-          player_b_name:    s.player_b_name,
-          team_a_player_id: s.team_a_player_id,
-          team_b_player_id: s.team_b_player_id,
-          team_a_player2_id: s.team_a_player2_id,
-          team_b_player2_id: s.team_b_player2_id,
-          match_id:         s.match_id,
-          scoring:          s.match_id ? (scoringById.get(s.match_id) ?? null) : null,
+      // ── Build submatches index by team_match_id ────────────────────────────
+      const smIdx = new Map<string, Submatch[]>()
+      for (const sm of (rawSMs ?? []) as any[]) {
+        const list = smIdx.get(sm.team_match_id) ?? []
+        list.push({
+          id:                sm.id,
+          match_order:       sm.match_order,
+          label:             sm.label,
+          player_a_name:     sm.player_a_name,
+          player_b_name:     sm.player_b_name,
+          team_a_player_id:  sm.team_a_player_id,
+          team_b_player_id:  sm.team_b_player_id,
+          team_a_player2_id: sm.team_a_player2_id,
+          team_b_player2_id: sm.team_b_player2_id,
+          match_id:          sm.match_id,
+          scoring:           sm.match_id ? (scoringIdx.get(sm.match_id) ?? null) : null,
         })
-        submatchesByMatch.set(s.team_match_id, arr)
+        smIdx.set(sm.team_match_id, list)
       }
 
-      const teamMatchList = (matchesRes.data ?? []).map((m: any) => ({
-        id:             m.id,
-        tournament_id:  tournamentId,
-        team_a_id:      m.team_a_id,
-        team_b_id:      m.team_b_id,
-        round:          m.round,
-        round_name:     m.round_name,
-        status:         m.status,
-        team_a_score:   m.team_a_score,
-        team_b_score:   m.team_b_score,
-        winner_team_id: m.winner_team_id,
-        group_id:       m.group_id,
-        submatches:     (submatchesByMatch.get(m.id) ?? [])
-                          .sort((a, b) => a.match_order - b.match_order),
-      })) as TeamMatchRich[]
+      // ── Assemble TeamMatchRich — team names embedded from THIS fetch's tById ──
+      // tById is a LOCAL variable, not from state — guaranteed consistent with matches
+      const matchList: TeamMatchRich[] = (rawMatches ?? []).map((m: any) => {
+        const tA = tById.get(m.team_a_id as string)
+        const tB = tById.get(m.team_b_id as string)
+        return {
+          id:             m.id,
+          team_a_id:      m.team_a_id,
+          team_b_id:      m.team_b_id,
+          team_a_name:    tA?.name   ?? 'Unknown',
+          team_b_name:    tB?.name   ?? 'Unknown',
+          team_a_color:   tA?.color  ?? '#888',
+          team_b_color:   tB?.color  ?? '#888',
+          round:          m.round,
+          round_name:     m.round_name,
+          status:         m.status,
+          team_a_score:   m.team_a_score,
+          team_b_score:   m.team_b_score,
+          winner_team_id: m.winner_team_id,
+          group_id:       m.group_id,
+          submatches:     (smIdx.get(m.id) ?? []).sort((a, b) => a.match_order - b.match_order),
+        }
+      })
+
+      // ── Fetch 5: groups + members (only when stage exists) ─────────────────
+      const { data: rawStage } = await sb
+        .from('stages').select('id, config')
+        .eq('tournament_id', tournamentId).eq('stage_number', 1).maybeSingle()
+      if (gen !== genRef.current) return
 
       let groupList: RRGroup[] = []
-      if (stageData) {
-        const { data: groupRows } = await sb.from('rr_groups')
-          .select('id, group_number, name')
-          .eq('stage_id', stageData.id).order('group_number')
+      if (rawStage) {
+        const { data: rawGroups } = await sb
+          .from('rr_groups').select('id, group_number, name')
+          .eq('stage_id', rawStage.id).order('group_number')
+        if (gen !== genRef.current) return
 
-        if (myId !== loadIdRef.current) return
-
-        const gIds = (groupRows ?? []).map(g => g.id)
-        const { data: memberRows } = gIds.length > 0
+        const gIds = (rawGroups ?? []).map((g: any) => g.id as string)
+        const { data: rawMembers } = gIds.length > 0
           ? await sb.from('team_rr_group_members').select('group_id, team_id').in('group_id', gIds)
           : { data: [] }
+        if (gen !== genRef.current) return
 
-        if (myId !== loadIdRef.current) return
-
-        const memberMap = new Map<string, string[]>()
-        for (const r of memberRows ?? []) {
-          const arr = memberMap.get(r.group_id) ?? []
-          arr.push(r.team_id)
-          memberMap.set(r.group_id, arr)
+        const mMap = new Map<string, string[]>()
+        for (const r of (rawMembers ?? []) as any[]) {
+          const arr = mMap.get(r.group_id) ?? []; arr.push(r.team_id); mMap.set(r.group_id, arr)
         }
-        groupList = (groupRows ?? []).map(g => ({
+        groupList = (rawGroups ?? []).map((g: any) => ({
           id: g.id, group_number: g.group_number, name: g.name,
-          teamIds: memberMap.get(g.id) ?? [],
+          teamIds: mMap.get(g.id) ?? [],
         }))
       }
 
-      if (myId !== loadIdRef.current) return
+      if (gen !== genRef.current) return
 
-      setSnap({ teams: teamList, teamMatches: teamMatchList, teamById, groups: groupList, stage: stageData })
+      // ── Commit — all state updated atomically from the same fetch ──────────
+      setTeams(teamList)
+      setTeamMatches(matchList)
+      setGroups(groupList)
+      setStage(rawStage as StageRow | null)
     } finally {
       inflightRef.current = false
-      if (myId === loadIdRef.current) setLoading(false)
+      if (gen === genRef.current) setLoading(false)
     }
   }, [tournamentId])
 
   useEffect(() => { loadData() }, [loadData])
 
-  // Realtime: debounced so rapid events collapse into one fetch
+  // Debounced realtime — collapses rapid events into one fetch after 500ms quiet
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null
     const debounced = () => {
       if (timer) clearTimeout(timer)
-      timer = setTimeout(() => loadData(true), 400)
+      timer = setTimeout(() => loadData(true), 500)
     }
     const ch = sb.channel(`team-group-${tournamentId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'team_matches',         filter: `tournament_id=eq.${tournamentId}` }, debounced)
@@ -302,194 +305,8 @@ function useTeamGroupData(tournamentId: string) {
     return () => { sb.removeChannel(ch); if (timer) clearTimeout(timer) }
   }, [tournamentId, loadData])
 
-  const { teams, teamMatches, teamById, groups, stage } = snap
-  return { teams, teamMatches, teamById, groups, stage, loading, loadData }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// In-memory standings (same algorithm as server-side, runs on client data)
-// ─────────────────────────────────────────────────────────────────────────────
-
-function computeStandings(groupId: string, teamIds: string[], matches: TeamMatchRich[]) {
-  type Row = { teamId: string; mW: number; mL: number; rW: number; rL: number; gW: number; gL: number }
-  const map = new Map<string, Row>(teamIds.map(id => [id, { teamId: id, mW: 0, mL: 0, rW: 0, rL: 0, gW: 0, gL: 0 }]))
-  const h2h = new Map<string, Map<string, number>>()
-  for (const id of teamIds) h2h.set(id, new Map())
-
-  for (const m of matches) {
-    if (m.group_id !== groupId || m.status !== 'complete') continue
-    const sA = map.get(m.team_a_id), sB = map.get(m.team_b_id)
-    if (m.winner_team_id === m.team_a_id) {
-      sA && sA.mW++; sB && sB.mL++
-      h2h.get(m.team_a_id)?.set(m.team_b_id, (h2h.get(m.team_a_id)?.get(m.team_b_id) ?? 0) + 1)
-    } else if (m.winner_team_id === m.team_b_id) {
-      sB && sB.mW++; sA && sA.mL++
-      h2h.get(m.team_b_id)?.set(m.team_a_id, (h2h.get(m.team_b_id)?.get(m.team_a_id) ?? 0) + 1)
-    }
-    for (const sm of m.submatches) {
-      const sc = sm.scoring; if (!sc || sc.status !== 'complete') continue
-      const aWon = sc.player1_games > sc.player2_games
-      if (sA) { sA.rW += aWon ? 1:0; sA.rL += aWon ? 0:1; sA.gW += sc.player1_games; sA.gL += sc.player2_games }
-      if (sB) { sB.rW += aWon ? 0:1; sB.rL += aWon ? 1:0; sB.gW += sc.player2_games; sB.gL += sc.player1_games }
-    }
-  }
-
-  const ratio = (w: number, l: number) => (w + l === 0 ? 0 : w / (w + l))
-  return [...map.values()].sort((a, b) => {
-    if (b.mW !== a.mW) return b.mW - a.mW
-    const rr = ratio(b.rW, b.rL) - ratio(a.rW, a.rL); if (Math.abs(rr) > 1e-9) return rr
-    const gr = ratio(b.gW, b.gL) - ratio(a.gW, a.gL); if (Math.abs(gr) > 1e-9) return gr
-    const bH = h2h.get(b.teamId)?.get(a.teamId) ?? 0
-    const aH = h2h.get(a.teamId)?.get(b.teamId) ?? 0
-    return bH - aH
-  })
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Input style
-// ─────────────────────────────────────────────────────────────────────────────
-
-const inputCls =
-  'w-full px-3 py-2 rounded-lg border border-border bg-background text-sm ' +
-  'focus:outline-none focus:ring-2 focus:ring-orange-500/50 text-foreground ' +
-  'placeholder:text-muted-foreground/60'
-
-// ─────────────────────────────────────────────────────────────────────────────
-// TeamGroupKOStage — main export
-// ─────────────────────────────────────────────────────────────────────────────
-
-export function TeamGroupKOStage({ tournament, matchBase }: {
-  tournament: Tournament
-  matchBase:  string
-}) {
-  const [isPending, startTransition] = useTransition()
-  const { setLoading }               = useLoading()
-  const router                       = useRouter()
-  const { teams, teamMatches, teamById, groups, stage, loading, loadData } = useTeamGroupData(tournament.id)
-
-  const isCorbillon  = tournament.format_type === 'team_group_corbillon'
-  const formatLabel  = isCorbillon ? 'Corbillon Cup' : 'Swaythling Cup'
-
-  const [activeTab, setActiveTab] = useState<'teams' | 'groups' | 'knockout'>('teams')
-
-  const rrMatches     = teamMatches.filter(m => m.group_id != null)
-  const koMatches     = teamMatches.filter(m => m.group_id == null && m.round >= 900)
-  const fixturesExist = rrMatches.length > 0
-  const allRRDone     = fixturesExist && rrMatches.every(m => m.status === 'complete')
-  const koExists      = koMatches.length > 0
-
-  // Auto-advance tab when stages are set up
-  useEffect(() => {
-    if (koExists) setActiveTab('knockout')
-    else if (stage) setActiveTab('groups')
-  }, [stage?.id, koExists])
-
-  if (loading) return <InlineLoader label="Loading team data…" />
-
-  const tabs: { key: 'teams' | 'groups' | 'knockout'; label: string; icon: React.ReactNode; done?: boolean }[] = [
-    { key: 'teams',    label: 'Teams',    icon: <Users className="h-4 w-4" />, done: teams.length >= 2 },
-    { key: 'groups',   label: 'Groups',   icon: <Layers className="h-4 w-4" />, done: fixturesExist },
-    { key: 'knockout', label: 'Knockout', icon: <Trophy className="h-4 w-4" />, done: koExists },
-  ]
-
-  return (
-    <div className="flex flex-col gap-6">
-      {/* Tab bar */}
-      <div className="flex gap-1 border-b border-border pb-0">
-        {tabs.map(tab => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            className={cn(
-              'flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px',
-              activeTab === tab.key
-                ? 'border-orange-500 text-orange-600 dark:text-orange-400'
-                : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border',
-            )}
-          >
-            {tab.icon}
-            {tab.label}
-            {tab.done && (
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
-            )}
-          </button>
-        ))}
-      </div>
-
-      {/* Tab: Teams */}
-      {activeTab === 'teams' && (
-        <TeamsTab
-          tournament={tournament}
-          teams={teams}
-          teamMatches={teamMatches}
-          stage={stage}
-          loadData={loadData}
-          isPending={isPending}
-          startTransition={startTransition}
-          setLoading={setLoading}
-          router={router}
-          onNext={() => setActiveTab('groups')}
-          formatLabel={formatLabel}
-        />
-      )}
-
-      {/* Tab: Groups */}
-      {activeTab === 'groups' && (
-        <GroupsTab
-          tournament={tournament}
-          teams={teams}
-          teamById={teamById}
-          groups={groups}
-          stage={stage}
-          teamMatches={teamMatches}
-          rrMatches={rrMatches}
-          matchBase={matchBase}
-          loadData={loadData}
-          isPending={isPending}
-          startTransition={startTransition}
-          setLoading={setLoading}
-          router={router}
-          allRRDone={allRRDone}
-          fixturesExist={fixturesExist}
-          koExists={koExists}
-          onNext={() => setActiveTab('knockout')}
-          isCorbillon={isCorbillon}
-        />
-      )}
-
-      {/* Tab: Knockout */}
-      {activeTab === 'knockout' && (
-        <KnockoutTab
-          tournament={tournament}
-          teams={teams}
-          teamById={teamById}
-          koMatches={koMatches}
-          matchBase={matchBase}
-          loadData={loadData}
-          isCorbillon={isCorbillon}
-          formatLabel={formatLabel}
-        />
-      )}
-    </div>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SheetJS lazy loader
-// ─────────────────────────────────────────────────────────────────────────────
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let _xlsxCache: any = null
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function loadXLSX(): Promise<any> {
-  if (_xlsxCache) return _xlsxCache
-  if (typeof window !== 'undefined' && (window as any).XLSX) {
-    _xlsxCache = (window as any).XLSX; return _xlsxCache
-  }
-  await new Promise<void>((resolve, reject) => {
-    const existing = document.getElementById('sheetjs-cdn')
-    if (existing) { existing.addEventListener('load', () => resolve()); return }
-    const s = document.createElement('script')
+  return { teams, teamMatches, groups, stage, loading, loadData }
+}ipt')
     s.id = 'sheetjs-cdn'
     s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
     s.onload = () => resolve(); s.onerror = () => reject(new Error('Could not load SheetJS'))
@@ -1309,10 +1126,10 @@ function LineupEditor({
 // ─────────────────────────────────────────────────────────────────────────────
 
 function FixtureDetailPanel({
-  match, teamById, isCorbillon, tournament, loadData,
+  match, teams, isCorbillon, tournament, loadData,
 }: {
   match:       TeamMatchRich
-  teamById:    Map<string, TeamWithPlayers>
+  teams:       TeamWithPlayers[]
   isCorbillon: boolean
   tournament:  { id: string; format: string }
   loadData:    () => void
@@ -1323,8 +1140,8 @@ function FixtureDetailPanel({
   const [lineupDirty,    setLineupDirty]    = useState(false)
 
   // Always look up teams directly by ID — never trust cached team_a/team_b on match objects
-  const teamA  = teamById.get(match.team_a_id) ?? null
-  const teamB  = teamById.get(match.team_b_id) ?? null
+  const teamA  = teams.find(t => t.id === match.team_a_id) ?? null
+  const teamB  = teams.find(t => t.id === match.team_b_id) ?? null
   const isLocked = match.status === 'complete'
   const format = (tournament.format ?? 'bo5') as MatchFormat
 
@@ -1358,15 +1175,15 @@ function FixtureDetailPanel({
       {/* Team score strip */}
       <div className="flex items-center justify-between px-1 py-2 mb-2">
         <div className="flex items-center gap-2">
-          <div className="h-2 w-2 rounded-full" style={{ backgroundColor: teamA?.color ?? '#888' }} />
-          <span className="text-sm font-semibold">{teamA?.name ?? '?'}</span>
+          <div className="h-2 w-2 rounded-full" style={{ backgroundColor: match.team_a_color }} />
+          <span className="text-sm font-semibold">{match.team_a_name}</span>
         </div>
         <span className="text-lg font-bold font-mono tabular-nums">
           {match.team_a_score} – {match.team_b_score}
         </span>
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold">{teamB?.name ?? '?'}</span>
-          <div className="h-2 w-2 rounded-full" style={{ backgroundColor: teamB?.color ?? '#888' }} />
+          <span className="text-sm font-semibold">{match.team_b_name}</span>
+          <div className="h-2 w-2 rounded-full" style={{ backgroundColor: match.team_b_color }} />
         </div>
       </div>
 
@@ -1463,13 +1280,12 @@ function FixtureDetailPanel({
 // ─────────────────────────────────────────────────────────────────────────────
 
 function GroupsTab({
-  tournament, teams, teamById, groups, stage, teamMatches, rrMatches, matchBase,
+  tournament, teams, groups, stage, teamMatches, rrMatches, matchBase,
   loadData, isPending, startTransition, setLoading, router,
   allRRDone, fixturesExist, koExists, onNext, isCorbillon,
 }: {
   tournament:      Tournament
   teams:           TeamWithPlayers[]
-  teamById:        Map<string, TeamWithPlayers>
   groups:          RRGroup[]
   stage:           StageRow | null
   teamMatches:     TeamMatchRich[]
@@ -1697,7 +1513,7 @@ function GroupsTab({
 
           {/* Groups */}
           {groups.map(group => {
-            const groupTeams   = group.teamIds.map(id => teamById.get(id)).filter(Boolean) as TeamWithPlayers[]
+            const groupTeams   = group.teamIds.map(id => teams.find(t => t.id === id)).filter(Boolean) as TeamWithPlayers[]
             const groupMatches = rrMatches.filter(m => m.group_id === group.id)
             const standings    = computeStandings(group.id, group.teamIds, teamMatches)
             const isExpanded   = expandedGroup === group.id
@@ -1749,7 +1565,7 @@ function GroupsTab({
                             </thead>
                             <tbody>
                               {standings.map((row, idx) => {
-                                const t = teamById.get(row.teamId)
+                                const t = teams.find(x => x.id === row.teamId)
                                 const isAdv = idx < stage.config.advanceCount
                                 return (
                                   <tr key={row.teamId}
@@ -1800,12 +1616,12 @@ function GroupsTab({
                                     <div className="flex-1 min-w-0 flex items-center gap-2 text-sm">
                                       <WinnerTrophy show={isComplete && m.winner_team_id === m.team_a_id} />
                                       <span className={cn('font-medium truncate', isComplete && m.winner_team_id !== m.team_a_id && 'text-muted-foreground')}>
-                                        {teamById.get(m.team_a_id)?.name ?? '—'}
+                                        {m.team_a_name}
                                       </span>
                                       <span className="font-mono font-bold text-sm shrink-0">{m.team_a_score}–{m.team_b_score}</span>
                                       <WinnerTrophy show={isComplete && m.winner_team_id === m.team_b_id} />
                                       <span className={cn('font-medium truncate', isComplete && m.winner_team_id !== m.team_b_id && 'text-muted-foreground')}>
-                                        {teamById.get(m.team_b_id)?.name ?? '—'}
+                                        {m.team_b_name}
                                       </span>
                                     </div>
                                     <div className="flex items-center gap-2 shrink-0">
@@ -1818,7 +1634,7 @@ function GroupsTab({
                                   {isExpM && (
                                     <FixtureDetailPanel
                                       match={m}
-                                      teamById={teamById}
+                                      teams={teams}
                                       isCorbillon={isCorbillon}
                                       tournament={tournament}
                                       loadData={() => loadData(true)}
@@ -1879,10 +1695,9 @@ function GroupsTab({
 // KnockoutTab — shows the KO bracket for the team group+KO event
 // ─────────────────────────────────────────────────────────────────────────────
 
-function KnockoutTab({ tournament, teams, teamById, koMatches, matchBase, loadData, isCorbillon, formatLabel }: {
+function KnockoutTab({ tournament, teams, koMatches, matchBase, loadData, isCorbillon, formatLabel }: {
   tournament:  Tournament
   teams:       TeamWithPlayers[]
-  teamById:    Map<string, TeamWithPlayers>
   koMatches:   TeamMatchRich[]
   matchBase:   string
   loadData:    (s?: boolean) => Promise<void>
@@ -1937,14 +1752,14 @@ function KnockoutTab({ tournament, teams, teamById, koMatches, matchBase, loadDa
                         <div className="flex-1 flex flex-col gap-1 min-w-0">
                           <div className={cn('flex items-center gap-2', isComplete && m.winner_team_id !== m.team_a_id && 'opacity-50')}>
                             <WinnerTrophy show={isComplete && m.winner_team_id === m.team_a_id} />
-                            <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: teamById.get(m.team_a_id)?.color ?? '#888' }} />
-                            <span className="text-sm font-semibold flex-1 truncate">{teamById.get(m.team_a_id)?.name ?? 'TBD'}</span>
+                            <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: m.team_a_color }} />
+                            <span className="text-sm font-semibold flex-1 truncate">{m.team_a_name || 'TBD'}</span>
                             <span className="text-sm font-bold font-mono">{m.team_a_score}</span>
                           </div>
                           <div className={cn('flex items-center gap-2', isComplete && m.winner_team_id !== m.team_b_id && 'opacity-50')}>
                             <WinnerTrophy show={isComplete && m.winner_team_id === m.team_b_id} />
-                            <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: teamById.get(m.team_b_id)?.color ?? '#888' }} />
-                            <span className="text-sm font-semibold flex-1 truncate">{teamById.get(m.team_b_id)?.name ?? 'TBD'}</span>
+                            <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: m.team_b_color }} />
+                            <span className="text-sm font-semibold flex-1 truncate">{m.team_b_name || 'TBD'}</span>
                             <span className="text-sm font-bold font-mono">{m.team_b_score}</span>
                           </div>
                         </div>
@@ -1958,7 +1773,7 @@ function KnockoutTab({ tournament, teams, teamById, koMatches, matchBase, loadDa
                       {expandedKO === m.id && (
                         <FixtureDetailPanel
                           match={m}
-                          teamById={teamById}
+                          teams={teams}
                           isCorbillon={isCorbillon}
                           tournament={tournament}
                           loadData={() => loadData(true)}
