@@ -128,7 +128,7 @@ type TeamMatchRow = {
   }>
 }
 
-export interface TeamStanding {
+interface TeamStanding {
   teamId:        string
   matchWins:     number
   matchLosses:   number
@@ -146,7 +146,7 @@ export interface TeamStanding {
 // 3. Game W/L ratio   (games won ÷ games played)
 // 4. Points W/L ratio (points scored ÷ points played)
 // 5. Head-to-head (if still tied between 2 teams)
-export function computeGroupStandings(
+function computeGroupStandings(
   groupId:  string,
   teamIds:  string[],
   matches:  TeamMatchRow[],
