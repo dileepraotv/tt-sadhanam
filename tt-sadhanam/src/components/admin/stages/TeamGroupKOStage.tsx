@@ -125,6 +125,15 @@ const TEAM_COLORS = [
 function pickColor(i: number) { return TEAM_COLORS[i % TEAM_COLORS.length] }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Shared input style
+// ─────────────────────────────────────────────────────────────────────────────
+
+const inputCls =
+  'w-full px-3 py-2 rounded-lg border border-border bg-background text-sm ' +
+  'focus:outline-none focus:ring-2 focus:ring-orange-500/50 text-foreground ' +
+  'placeholder:text-muted-foreground/60'
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Data hook — loads teams, stage, groups, and team_matches in parallel
 // ─────────────────────────────────────────────────────────────────────────────
 
