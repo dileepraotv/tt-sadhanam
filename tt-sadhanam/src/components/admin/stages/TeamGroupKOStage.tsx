@@ -37,7 +37,7 @@ import {
   createTeamRRStage, generateTeamGroups, generateTeamGroupFixtures,
   finalizeTeamGroups, resetTeamGroupStage, updateTeamGroupMatchWinner,
 } from '@/lib/actions/teamGroupKO'
-import { saveGameScore, declareMatchWinner } from '@/lib/actions/matches'
+import { saveGameScore, declareMatchWinner, updateMatchFormat } from '@/lib/actions/matches'
 import { computeGroupLayout, groupLayoutSummary, snakeAssign } from '@/lib/roundrobin/groupLayout'
 import type { MatchFormat } from '@/lib/types'
 
@@ -929,25 +929,24 @@ function TeamsTab({ tournament, teams, teamMatches, stage, loadData, isPending, 
 type GameLocal = { s1: string; s2: string }
 
 function RubberScorer({
-  submatch, teamA, teamB, isCorbillon, tournamentId, matchFormat, onSaved,
+  submatch, teamA, teamB, isCorbillon, tournamentId, matchFormat: propFormat, onSaved,
 }: {
-  submatch:    Submatch
-  teamA:       TeamWithPlayers | null
-  teamB:       TeamWithPlayers | null
-  isCorbillon: boolean
+  submatch:     Submatch
+  teamA:        TeamWithPlayers | null
+  teamB:        TeamWithPlayers | null
+  isCorbillon:  boolean
   tournamentId: string
-  matchFormat: MatchFormat
-  onSaved:     () => void
+  matchFormat:  MatchFormat
+  onSaved:      () => void
 }) {
   const supabase = createClient()
-  const [games,       setGames]   = useState<Array<{id:string;game_number:number;score1:number;score2:number}>>([])
-  const [localScores, setLocal]   = useState<Record<number, GameLocal>>({})
-  const [saving,      setSaving]  = useState(false)
+  const [games,       setGames]    = useState<Array<{id:string;game_number:number;score1:number;score2:number}>>([])
+  const [localScores, setLocal]    = useState<Record<number, GameLocal>>({})
+  const [saving,      setSaving]   = useState(false)
   const [loadingG,    setLoadingG] = useState(true)
+  // Per-rubber format selector — defaults to tournament format, user can override
+  const [activeFormat, setActiveFormat] = useState<MatchFormat>(propFormat)
   const scoring = submatch.scoring
-
-  // Is this rubber a doubles rubber? (order 3 in Corbillon)
-  const isDbl = isCorbillon && submatch.match_order === 3
 
   useEffect(() => {
     if (!submatch.match_id) { setLoadingG(false); return }
@@ -963,14 +962,16 @@ function RubberScorer({
       })
   }, [submatch.match_id])
 
-  const maxGames = matchFormat === 'bo3' ? 3 : matchFormat === 'bo7' ? 7 : 5
+  // When format changes, persist it to the match row so saveGameScore uses it
+  const handleFormatChange = async (fmt: MatchFormat) => {
+    setActiveFormat(fmt)
+    if (submatch.match_id) {
+      await updateMatchFormat(submatch.match_id, fmt)
+    }
+  }
 
-  // Determine which games to show: always show at least enough for a result
-  const completed = scoring?.player1_games ?? 0
-  const p2Wins    = scoring?.player2_games ?? 0
-  const winsNeeded = Math.ceil(maxGames / 2)
-  const gamesPlayed = games.length
-  const numSlots = Math.max(winsNeeded + 1, gamesPlayed + 1, 3)
+  // Always show exactly maxGames columns (all 5 for bo5, all 3 for bo3, all 7 for bo7)
+  const maxGames = activeFormat === 'bo3' ? 3 : activeFormat === 'bo7' ? 7 : 5
 
   const handleScore = (gn: number, field: 'a' | 'b', val: string) => {
     setLocal(prev => ({ ...prev, [gn]: { ...prev[gn] ?? { s1:'', s2:'' }, [field === 'a' ? 's1' : 's2']: val } }))
@@ -979,77 +980,114 @@ function RubberScorer({
   const handleSave = async () => {
     if (!submatch.match_id) return
     setSaving(true)
-    for (const [gnStr, sc] of Object.entries(localScores)) {
-      const gn = Number(gnStr)
-      const s1 = parseInt(sc.s1, 10), s2 = parseInt(sc.s2, 10)
-      if (isNaN(s1) || isNaN(s2) || (s1 === 0 && s2 === 0)) continue
+    // Save games in order 1→N; stop once the server tells us the rubber is complete
+    // (engine returns error "Cannot add another game" once a player reaches winsNeeded)
+    const entries = Array.from({ length: maxGames }, (_, i) => i + 1)
+      .map(gn => ({ gn, sc: localScores[gn] }))
+      .filter(({ sc }) => sc && !(sc.s1 === '' && sc.s2 === ''))
+
+    for (const { gn, sc } of entries) {
+      const s1 = parseInt(sc!.s1, 10), s2 = parseInt(sc!.s2, 10)
+      if (isNaN(s1) || isNaN(s2)) continue
+      // Allow 0-X or X-0 scores (e.g. 0-11 is valid)
       const res = await saveGameScore(submatch.match_id, gn, s1, s2)
-      if (!res.success) { toast({ title: res.error, variant: 'destructive' }); setSaving(false); return }
+      if (!res.success) {
+        // If "cannot add" it means the rubber is already decided — not an error for the user
+        if (res.error?.includes('Cannot add') || res.error?.includes('already complete')) break
+        toast({ title: res.error, variant: 'destructive' })
+        setSaving(false)
+        return
+      }
     }
     toast({ title: 'Rubber scores saved', variant: 'success' })
     setSaving(false)
     onSaved()
   }
 
-  const handleDeclareWinner = async (winnerId: 'player1' | 'player2') => {
+  // FIX: pass 'p1'/'p2' — these are the sentinels declareMatchWinner checks for team submatches
+  const handleDeclareWinner = async (side: 'p1' | 'p2') => {
     if (!submatch.match_id) return
     setSaving(true)
-    // Use null as player IDs for team submatches — declareMatchWinner accepts 'TEAM_A'/'TEAM_B' sentinels
-    const res = await declareMatchWinner(submatch.match_id, winnerId === 'player1' ? 'TEAM_A' : 'TEAM_B', tournamentId)
+    const res = await declareMatchWinner(submatch.match_id, side, 'declared')
     setSaving(false)
-    if (res && (res as {error?:string}).error) { toast({ title: (res as {error:string}).error, variant: 'destructive' }); return }
+    if (!res.success) { toast({ title: res.error ?? 'Failed', variant: 'destructive' }); return }
     toast({ title: 'Rubber result saved', variant: 'success' })
     onSaved()
   }
 
   if (loadingG) return <div className="text-xs text-muted-foreground py-2 px-3">Loading…</div>
 
-  const isComplete = scoring?.status === 'complete'
+  const isComplete   = scoring?.status === 'complete'
+  const p1Wins       = scoring?.player1_games ?? 0
+  const p2Wins       = scoring?.player2_games ?? 0
 
   return (
     <div className="mt-2 rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-3">
-      {/* Score grid */}
-      <div className="flex flex-col gap-1.5">
-        <div className="grid gap-1" style={{ gridTemplateColumns: `auto repeat(${Math.min(numSlots, maxGames)}, 1fr)` }}>
-          <div className="text-xs font-semibold text-muted-foreground py-1 pr-2">Game</div>
-          {Array.from({ length: Math.min(numSlots, maxGames) }, (_, i) => (
-            <div key={i} className="text-xs text-center font-mono text-muted-foreground">{i+1}</div>
+
+      {/* Format selector */}
+      {!isComplete && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground font-medium">Format:</span>
+          <div className="flex gap-0.5 p-0.5 bg-muted rounded-md">
+            {(['bo3','bo5','bo7'] as MatchFormat[]).map(fmt => (
+              <button key={fmt} onClick={() => handleFormatChange(fmt)}
+                className={cn(
+                  'px-2.5 py-1 rounded text-xs font-semibold transition-colors',
+                  activeFormat === fmt
+                    ? 'bg-background shadow-sm text-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}>
+                {fmt === 'bo3' ? 'Best of 3' : fmt === 'bo5' ? 'Best of 5' : 'Best of 7'}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Score grid — always show maxGames columns */}
+      <div className="overflow-x-auto">
+        <div className="grid gap-1 min-w-0"
+          style={{ gridTemplateColumns: `minmax(80px,1fr) repeat(${maxGames}, 48px)` }}>
+          {/* Header */}
+          <div className="text-xs font-semibold text-muted-foreground py-1">Team</div>
+          {Array.from({ length: maxGames }, (_, i) => (
+            <div key={i} className="text-xs text-center font-mono text-muted-foreground py-1">{i+1}</div>
           ))}
           {/* Team A row */}
-          <div className="text-xs font-medium py-1 pr-2 truncate">{teamA?.name ?? 'Team A'}</div>
-          {Array.from({ length: Math.min(numSlots, maxGames) }, (_, i) => {
+          <div className="text-xs font-medium py-1 truncate self-center">{teamA?.name ?? 'Team A'}</div>
+          {Array.from({ length: maxGames }, (_, i) => {
             const gn = i + 1
             return (
               <input key={gn} type="number" min={0} max={99}
                 value={localScores[gn]?.s1 ?? ''}
                 onChange={e => handleScore(gn, 'a', e.target.value)}
                 disabled={isComplete || saving}
-                className="w-full text-center text-sm py-1 rounded border border-border bg-background focus:outline-none focus:ring-1 focus:ring-orange-500/50 disabled:opacity-50"
+                className="w-full text-center text-sm py-1.5 rounded border border-border bg-background focus:outline-none focus:ring-1 focus:ring-orange-500/50 disabled:opacity-40 [appearance:textfield]"
               />
             )
           })}
           {/* Team B row */}
-          <div className="text-xs font-medium py-1 pr-2 truncate">{teamB?.name ?? 'Team B'}</div>
-          {Array.from({ length: Math.min(numSlots, maxGames) }, (_, i) => {
+          <div className="text-xs font-medium py-1 truncate self-center">{teamB?.name ?? 'Team B'}</div>
+          {Array.from({ length: maxGames }, (_, i) => {
             const gn = i + 1
             return (
               <input key={gn} type="number" min={0} max={99}
                 value={localScores[gn]?.s2 ?? ''}
                 onChange={e => handleScore(gn, 'b', e.target.value)}
                 disabled={isComplete || saving}
-                className="w-full text-center text-sm py-1 rounded border border-border bg-background focus:outline-none focus:ring-1 focus:ring-orange-500/50 disabled:opacity-50"
+                className="w-full text-center text-sm py-1.5 rounded border border-border bg-background focus:outline-none focus:ring-1 focus:ring-orange-500/50 disabled:opacity-40 [appearance:textfield]"
               />
             )
           })}
         </div>
       </div>
 
-      {/* Result + actions */}
+      {/* Result / actions */}
       <div className="flex items-center gap-2 flex-wrap">
         {isComplete ? (
           <div className="flex items-center gap-1.5 text-sm font-semibold text-emerald-600 dark:text-emerald-400">
             <Check className="h-3.5 w-3.5" />
-            {completed > p2Wins ? (teamA?.name ?? 'A') : (teamB?.name ?? 'B')} wins {completed}–{p2Wins}
+            {p1Wins > p2Wins ? (teamA?.name ?? 'Team A') : (teamB?.name ?? 'Team B')} wins {p1Wins}–{p2Wins} rubbers
           </div>
         ) : (
           <>
@@ -1058,11 +1096,11 @@ function RubberScorer({
               Save Scores
             </Button>
             <span className="text-xs text-muted-foreground">or declare:</span>
-            <Button size="sm" variant="outline" onClick={() => handleDeclareWinner('player1')} disabled={saving}
+            <Button size="sm" variant="outline" onClick={() => handleDeclareWinner('p1')} disabled={saving}
               className="h-7 text-xs gap-1">
               <Trophy className="h-3 w-3" /> {teamA?.name ?? 'Team A'} wins
             </Button>
-            <Button size="sm" variant="outline" onClick={() => handleDeclareWinner('player2')} disabled={saving}
+            <Button size="sm" variant="outline" onClick={() => handleDeclareWinner('p2')} disabled={saving}
               className="h-7 text-xs gap-1">
               <Trophy className="h-3 w-3" /> {teamB?.name ?? 'Team B'} wins
             </Button>
