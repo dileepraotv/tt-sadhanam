@@ -192,20 +192,32 @@ function useTeamGroupData(tournamentId: string) {
         .sort((a, b) => a.match_order - b.match_order),
     })) as unknown as TeamMatchRich[])
 
-    // Load groups + members if stage exists (4th query, only when needed)
+    // Load groups + members if stage exists (explicit queries — no FK-embedded-select)
     if (stageData) {
       const { data: groupRows } = await supabase
         .from('rr_groups')
-        .select('id, group_number, name, team_rr_group_members(team_id)')
+        .select('id, group_number, name')
         .eq('stage_id', stageData.id)
         .order('group_number')
+
+      const gIds = (groupRows ?? []).map(g => g.id)
+      const { data: memberRows } = gIds.length > 0
+        ? await supabase.from('team_rr_group_members').select('group_id, team_id').in('group_id', gIds)
+        : { data: [] }
+
+      // Build groupId → teamId[] map
+      const memberMap = new Map<string, string[]>()
+      for (const m of memberRows ?? []) {
+        const arr = memberMap.get(m.group_id) ?? []
+        arr.push(m.team_id)
+        memberMap.set(m.group_id, arr)
+      }
 
       setGroups((groupRows ?? []).map(g => ({
         id:           g.id,
         group_number: g.group_number,
         name:         g.name,
-        teamIds: ((g as unknown as { team_rr_group_members: { team_id: string }[] })
-          .team_rr_group_members ?? []).map((m: { team_id: string }) => m.team_id),
+        teamIds:      memberMap.get(g.id) ?? [],
       })))
     } else {
       setGroups([])
@@ -928,6 +940,21 @@ function TeamsTab({ tournament, teams, teamMatches, stage, loadData, isPending, 
 
 type GameLocal = { s1: string; s2: string }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Table tennis score validation
+// Rules: first to 11, win by 2; if both ≥ 10 (deuce) must win by exactly 2
+// ─────────────────────────────────────────────────────────────────────────────
+
+function validateTTScore(s1: number, s2: number): string | null {
+  if (s1 < 0 || s2 < 0)           return 'Scores cannot be negative'
+  const max = Math.max(s1, s2), min = Math.min(s1, s2)
+  if (max < 11)                    return `Winner needs at least 11 points (got ${max})`
+  if (min >= 10 && max - min < 2)  return `At deuce (both ≥ 10), must win by 2 — ${s1}-${s2} is invalid`
+  if (min >= 10 && max - min > 2)  return `At deuce, must win by exactly 2 — ${s1}-${s2} is invalid`
+  if (min < 10 && max > 11)        return `${s1}-${s2} is invalid — game ends at 11 when opponent has < 10`
+  return null
+}
+
 function RubberScorer({
   submatch, teamA, teamB, isCorbillon, tournamentId, matchFormat: propFormat, onSaved,
 }: {
@@ -973,15 +1000,30 @@ function RubberScorer({
   // Always show exactly maxGames columns (all 5 for bo5, all 3 for bo3, all 7 for bo7)
   const maxGames = activeFormat === 'bo3' ? 3 : activeFormat === 'bo7' ? 7 : 5
 
+  const [scoreErrors, setScoreErrors] = useState<Record<number, string>>({})
+
   const handleScore = (gn: number, field: 'a' | 'b', val: string) => {
-    setLocal(prev => ({ ...prev, [gn]: { ...prev[gn] ?? { s1:'', s2:'' }, [field === 'a' ? 's1' : 's2']: val } }))
+    setLocal(prev => {
+      const updated = { ...prev, [gn]: { ...prev[gn] ?? { s1:'', s2:'' }, [field === 'a' ? 's1' : 's2']: val } }
+      // Validate immediately once both scores are filled
+      const row = updated[gn]
+      if (row.s1 !== '' && row.s2 !== '') {
+        const s1 = parseInt(row.s1, 10), s2 = parseInt(row.s2, 10)
+        if (!isNaN(s1) && !isNaN(s2)) {
+          const err = validateTTScore(s1, s2)
+          setScoreErrors(prev => ({ ...prev, [gn]: err ?? '' }))
+        }
+      } else {
+        setScoreErrors(prev => { const n = {...prev}; delete n[gn]; return n })
+      }
+      return updated
+    })
   }
 
   const handleSave = async () => {
     if (!submatch.match_id) return
-    setSaving(true)
-    // Save games in order 1→N; stop once the server tells us the rubber is complete
-    // (engine returns error "Cannot add another game" once a player reaches winsNeeded)
+
+    // Validate all filled scores before sending to server
     const entries = Array.from({ length: maxGames }, (_, i) => i + 1)
       .map(gn => ({ gn, sc: localScores[gn] }))
       .filter(({ sc }) => sc && !(sc.s1 === '' && sc.s2 === ''))
@@ -989,12 +1031,22 @@ function RubberScorer({
     for (const { gn, sc } of entries) {
       const s1 = parseInt(sc!.s1, 10), s2 = parseInt(sc!.s2, 10)
       if (isNaN(s1) || isNaN(s2)) continue
-      // Allow 0-X or X-0 scores (e.g. 0-11 is valid)
+      const validErr = validateTTScore(s1, s2)
+      if (validErr) {
+        toast({ title: `Game ${gn}: ${validErr}`, variant: 'destructive' })
+        return
+      }
+    }
+
+    setSaving(true)
+    for (const { gn, sc } of entries) {
+      const s1 = parseInt(sc!.s1, 10), s2 = parseInt(sc!.s2, 10)
+      if (isNaN(s1) || isNaN(s2)) continue
       const res = await saveGameScore(submatch.match_id, gn, s1, s2)
       if (!res.success) {
-        // If "cannot add" it means the rubber is already decided — not an error for the user
+        // If "cannot add" the rubber is already decided — stop silently
         if (res.error?.includes('Cannot add') || res.error?.includes('already complete')) break
-        toast({ title: res.error, variant: 'destructive' })
+        toast({ title: `Game ${gn}: ${res.error}`, variant: 'destructive' })
         setSaving(false)
         return
       }
@@ -1080,6 +1132,12 @@ function RubberScorer({
             )
           })}
         </div>
+        {/* Inline validation errors */}
+        {Object.entries(scoreErrors).filter(([, e]) => e).map(([gn, err]) => (
+          <p key={gn} className="text-xs text-destructive flex items-center gap-1 mt-1">
+            <AlertTriangle className="h-3 w-3 shrink-0" /> Game {gn}: {err}
+          </p>
+        ))}
       </div>
 
       {/* Result / actions */}

@@ -376,18 +376,33 @@ export async function generateTeamGroupFixtures(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
-  // Load groups + members + team players in parallel — 2 queries
-  const [membersRes, teamsRes] = await Promise.all([
-    supabase.from('rr_groups').select('id, group_number, team_rr_group_members(team_id)')
+  // Load groups, members, and teams — 3 explicit queries (avoids FK-embedded-select issues)
+  const [groupsRes, teamsRes] = await Promise.all([
+    supabase.from('rr_groups').select('id, group_number')
       .eq('stage_id', stageId).order('group_number'),
     supabase.from('teams')
       .select('id, name, team_players(id, name, position)')
       .eq('tournament_id', tournamentId),
   ])
 
-  const groups  = membersRes.data ?? []
+  const groups   = groupsRes.data ?? []
   const allTeams = teamsRes.data ?? []
   if (!groups.length) return { error: 'No groups found.' }
+
+  // Explicit member load — never rely on embedded select for team_rr_group_members
+  const groupIds = groups.map(g => g.id)
+  const { data: membersRows } = await supabase
+    .from('team_rr_group_members')
+    .select('group_id, team_id')
+    .in('group_id', groupIds)
+
+  // Build groupId → teamId[] map
+  const membersByGroup = new Map<string, string[]>()
+  for (const row of membersRows ?? []) {
+    const arr = membersByGroup.get(row.group_id) ?? []
+    arr.push(row.team_id)
+    membersByGroup.set(row.group_id, arr)
+  }
 
   const teamById = new Map(allTeams.map(t => [t.id, t]))
   const defs     = submatchDefs(formatType)
@@ -416,9 +431,7 @@ export async function generateTeamGroupFixtures(
   let globalRound = 1    // unique round number across all groups
 
   for (const group of groups) {
-    const members = (group as unknown as { team_rr_group_members: { team_id: string }[] })
-      .team_rr_group_members ?? []
-    const teamIds = members.map(m => m.team_id)
+    const teamIds = membersByGroup.get(group.id) ?? []
     if (teamIds.length < 2) continue
 
     // Round-robin: every pair meets once
@@ -523,10 +536,9 @@ export async function finalizeTeamGroups(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
-  // 2 parallel loads
+  // 3 explicit queries (avoids FK-embedded-select issues for team_rr_group_members)
   const [groupsRes, matchesRes] = await Promise.all([
-    supabase.from('rr_groups')
-      .select('id, group_number, team_rr_group_members(team_id)')
+    supabase.from('rr_groups').select('id, group_number')
       .eq('stage_id', stageId).order('group_number'),
     supabase.from('team_matches')
       .select(`id, team_a_id, team_b_id, team_a_score, team_b_score,
@@ -544,6 +556,19 @@ export async function finalizeTeamGroups(
 
   if (!groups.length) return { error: 'No groups found.' }
 
+  // Explicit member load
+  const finalGroupIds = groups.map(g => g.id)
+  const { data: finalMembersRows } = await supabase
+    .from('team_rr_group_members')
+    .select('group_id, team_id')
+    .in('group_id', finalGroupIds)
+  const finalMembersByGroup = new Map<string, string[]>()
+  for (const row of finalMembersRows ?? []) {
+    const arr = finalMembersByGroup.get(row.group_id) ?? []
+    arr.push(row.team_id)
+    finalMembersByGroup.set(row.group_id, arr)
+  }
+
   // Validate: all group matches complete
   const incomplete = matches.filter(m => m.group_id && m.status !== 'complete')
   if (incomplete.length > 0)
@@ -552,9 +577,7 @@ export async function finalizeTeamGroups(
   // Build qualifiers: top advanceCount from each group (in-memory)
   const qualifiers: Array<{ teamId: string; groupRank: number; groupNum: number }> = []
   for (const group of groups) {
-    const members = (group as unknown as { team_rr_group_members: { team_id: string }[] })
-      .team_rr_group_members ?? []
-    const teamIds   = members.map(m => m.team_id)
+    const teamIds   = finalMembersByGroup.get(group.id) ?? []
     const standings = computeGroupStandings(group.id, teamIds, matches)
     standings.slice(0, advanceCount).forEach((s, idx) => {
       qualifiers.push({ teamId: s.teamId, groupRank: idx + 1, groupNum: group.group_number })
@@ -763,7 +786,7 @@ export async function getTeamGroupStageData(tournamentId: string) {
   const [stageRes, teamsRes, matchesRes] = await Promise.all([
     // Embed rr_groups + members directly — avoids a serial query after stage id resolves
     supabase.from('stages')
-      .select('id, config, rr_groups(id, group_number, name, team_rr_group_members(team_id))')
+      .select('id, config, rr_groups(id, group_number, name)')
       .eq('tournament_id', tournamentId).eq('stage_number', 1).maybeSingle(),
     supabase.from('teams').select('id, name, short_name, color, seed, team_players(id, name, position)')
       .eq('tournament_id', tournamentId).order('created_at'),
@@ -792,9 +815,20 @@ export async function getTeamGroupStageData(tournamentId: string) {
   const koMatches = matches.filter(m => m.group_id == null && (m as any).round >= 900)
 
   // Compute standings in-memory
+  // Load members explicitly
+  const pubGroupIds = groups.map((g: any) => g.id)
+  const { data: pubMembers } = pubGroupIds.length > 0
+    ? await supabase.from('team_rr_group_members').select('group_id, team_id').in('group_id', pubGroupIds)
+    : { data: [] }
+  const pubMembersByGroup = new Map<string, string[]>()
+  for (const row of pubMembers ?? []) {
+    const arr = pubMembersByGroup.get(row.group_id) ?? []
+    arr.push(row.team_id)
+    pubMembersByGroup.set(row.group_id, arr)
+  }
+
   const standings = groups.map((group: any) => {
-    const members = (group.team_rr_group_members ?? []) as { team_id: string }[]
-    const teamIds = members.map(m => m.team_id)
+    const teamIds = pubMembersByGroup.get(group.id) ?? []
     const rows    = computeGroupStandings(group.id, teamIds, rrMatches)
     return { groupId: group.id, groupNumber: group.group_number, groupName: group.name, rows, teams }
   })
