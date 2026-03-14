@@ -176,11 +176,32 @@ function computeStandings(groupId: string, teamIds: string[], matches: TeamMatch
 // Data hook — loads teams, stage, groups, and team_matches in parallel
 // ─────────────────────────────────────────────────────────────────────────────
 
-// useTeamGroupData — stable supabase ref, flat queries, team names embedded in matches
+// useTeamGroupData
+// ─────────────────────────────────────────────────────────────────────────────
+// Design principles that eliminate the "wrong team name" bug once and for all:
+//
+//  1. Teams are loaded ONCE into a stable ref (teamNamesRef). They never change
+//     during a tournament session, so there is no reason to ever re-fetch them.
+//     The ref is set before any match data is committed to state.
+//
+//  2. Match data (team_matches, submatches, scoring) is loaded separately and
+//     can be refreshed freely by Realtime events without touching teams.
+//
+//  3. team_a_name / team_b_name are resolved from teamNamesRef at the moment
+//     each loadMatches() call builds the match list — the ref is always fully
+//     populated at that point because loadTeams() is awaited first.
+//
+//  4. A single generation counter prevents stale async responses from
+//     overwriting newer ones.
+// ─────────────────────────────────────────────────────────────────────────────
+
 function useTeamGroupData(tournamentId: string) {
-  // ONE stable client for the lifetime of this component tree
-  const sbRef     = useRef(createClient())
-  const sb        = sbRef.current
+  const sbRef = useRef(createClient())
+  const sb    = sbRef.current
+
+  // Stable name/color map — loaded ONCE, never re-fetched
+  // Key: team UUID  Value: { name, color, team object }
+  const teamNamesRef = useRef<Map<string, TeamWithPlayers>>(new Map())
 
   const [teams,       setTeams]       = useState<TeamWithPlayers[]>([])
   const [teamMatches, setTeamMatches] = useState<TeamMatchRich[]>([])
@@ -188,162 +209,172 @@ function useTeamGroupData(tournamentId: string) {
   const [stage,       setStage]       = useState<StageRow | null>(null)
   const [loading,     setLoading]     = useState(true)
 
-  // Generation counter: only the most recent fetch may commit
-  const genRef     = useRef(0)
-  const inflightRef = useRef(false)
+  const genRef = useRef(0)
 
-  const loadData = useCallback(async (silent = false) => {
-    // Drop concurrent calls — Realtime debounce ensures we catch up
-    if (inflightRef.current && silent) return
-    const gen = ++genRef.current
-    inflightRef.current = true
-    if (!silent) setLoading(true)
+  // ── Load teams once — stores into ref AND state ───────────────────────────
+  const loadTeams = useCallback(async (): Promise<boolean> => {
+    const { data } = await sb
+      .from('teams')
+      .select('id, name, short_name, color, seed, doubles_p1_pos, doubles_p2_pos, team_players(id, name, position)')
+      .eq('tournament_id', tournamentId)
+      .order('created_at')
+    if (!data) return false
 
-    try {
-      // ── Fetch 1: teams + their players ─────────────────────────────────────
-      const { data: rawTeams } = await sb
-        .from('teams')
-        .select('id, name, short_name, color, seed, doubles_p1_pos, doubles_p2_pos, team_players(id, name, position)')
-        .eq('tournament_id', tournamentId)
-        .order('created_at')
-      if (gen !== genRef.current) return
+    const list: TeamWithPlayers[] = data.map((t: any) => ({
+      id: t.id, name: t.name, short_name: t.short_name, color: t.color,
+      seed: t.seed, doubles_p1_pos: t.doubles_p1_pos, doubles_p2_pos: t.doubles_p2_pos,
+      tournament_id: tournamentId, created_at: t.created_at ?? '',
+      players: ((t.team_players ?? []) as TeamPlayer[]).sort((a, b) => a.position - b.position),
+    }))
 
-      // Build a plain lookup — key is UUID, value is team display data
-      // This map is LOCAL to this fetch and never shared with any state
-      const tById = new Map((rawTeams ?? []).map((t: any) => [t.id as string, t]))
-
-      const teamList: TeamWithPlayers[] = (rawTeams ?? []).map((t: any) => ({
-        id: t.id, name: t.name, short_name: t.short_name, color: t.color,
-        seed: t.seed, doubles_p1_pos: t.doubles_p1_pos, doubles_p2_pos: t.doubles_p2_pos,
-        tournament_id: tournamentId, created_at: t.created_at ?? '',
-        players: ((t.team_players ?? []) as TeamPlayer[]).sort((a, b) => a.position - b.position),
-      }))
-
-      // ── Fetch 2: team_matches (IDs + scores only, NO FK joins) ─────────────
-      const { data: rawMatches } = await sb
-        .from('team_matches')
-        .select('id, team_a_id, team_b_id, round, round_name, status, team_a_score, team_b_score, winner_team_id, group_id')
-        .eq('tournament_id', tournamentId)
-        .order('round')
-      if (gen !== genRef.current) return
-
-      const matchIds = (rawMatches ?? []).map((m: any) => m.id as string)
-
-      // ── Fetch 3: submatches (flat, no joins) ───────────────────────────────
-      const { data: rawSMs } = matchIds.length > 0
-        ? await sb.from('team_match_submatches')
-            .select('id, team_match_id, match_order, label, player_a_name, player_b_name, team_a_player_id, team_b_player_id, team_a_player2_id, team_b_player2_id, match_id')
-            .in('team_match_id', matchIds)
-            .order('match_order')
-        : { data: [] }
-      if (gen !== genRef.current) return
-
-      // ── Fetch 4: rubber scoring (flat, no joins) ───────────────────────────
-      const smMatchIds = ((rawSMs ?? []) as any[]).map(s => s.match_id).filter(Boolean) as string[]
-      const { data: rawScoring } = smMatchIds.length > 0
-        ? await sb.from('matches')
-            .select('id, player1_games, player2_games, status, match_format')
-            .in('id', smMatchIds)
-        : { data: [] }
-      if (gen !== genRef.current) return
-
-      // ── Build scoring index ────────────────────────────────────────────────
-      const scoringIdx = new Map(((rawScoring ?? []) as any[]).map(s => [s.id as string, s]))
-
-      // ── Build submatches index by team_match_id ────────────────────────────
-      const smIdx = new Map<string, Submatch[]>()
-      for (const sm of (rawSMs ?? []) as any[]) {
-        const list = smIdx.get(sm.team_match_id) ?? []
-        list.push({
-          id:                sm.id,
-          match_order:       sm.match_order,
-          label:             sm.label,
-          player_a_name:     sm.player_a_name,
-          player_b_name:     sm.player_b_name,
-          team_a_player_id:  sm.team_a_player_id,
-          team_b_player_id:  sm.team_b_player_id,
-          team_a_player2_id: sm.team_a_player2_id,
-          team_b_player2_id: sm.team_b_player2_id,
-          match_id:          sm.match_id,
-          scoring:           sm.match_id ? (scoringIdx.get(sm.match_id) ?? null) : null,
-        })
-        smIdx.set(sm.team_match_id, list)
-      }
-
-      // ── Assemble TeamMatchRich — team names embedded from THIS fetch's tById ──
-      // tById is a LOCAL variable, not from state — guaranteed consistent with matches
-      const matchList: TeamMatchRich[] = (rawMatches ?? []).map((m: any) => {
-        const tA = tById.get(m.team_a_id as string)
-        const tB = tById.get(m.team_b_id as string)
-        return {
-          id:             m.id,
-          team_a_id:      m.team_a_id,
-          team_b_id:      m.team_b_id,
-          team_a_name:    tA?.name   ?? 'Unknown',
-          team_b_name:    tB?.name   ?? 'Unknown',
-          team_a_color:   tA?.color  ?? '#888',
-          team_b_color:   tB?.color  ?? '#888',
-          round:          m.round,
-          round_name:     m.round_name,
-          status:         m.status,
-          team_a_score:   m.team_a_score,
-          team_b_score:   m.team_b_score,
-          winner_team_id: m.winner_team_id,
-          group_id:       m.group_id,
-          submatches:     (smIdx.get(m.id) ?? []).sort((a, b) => a.match_order - b.match_order),
-        }
-      })
-
-      // ── Fetch 5: groups + members (only when stage exists) ─────────────────
-      const { data: rawStage } = await sb
-        .from('stages').select('id, config')
-        .eq('tournament_id', tournamentId).eq('stage_number', 1).maybeSingle()
-      if (gen !== genRef.current) return
-
-      let groupList: RRGroup[] = []
-      if (rawStage) {
-        const { data: rawGroups } = await sb
-          .from('rr_groups').select('id, group_number, name')
-          .eq('stage_id', rawStage.id).order('group_number')
-        if (gen !== genRef.current) return
-
-        const gIds = (rawGroups ?? []).map((g: any) => g.id as string)
-        const { data: rawMembers } = gIds.length > 0
-          ? await sb.from('team_rr_group_members').select('group_id, team_id').in('group_id', gIds)
-          : { data: [] }
-        if (gen !== genRef.current) return
-
-        const mMap = new Map<string, string[]>()
-        for (const r of (rawMembers ?? []) as any[]) {
-          const arr = mMap.get(r.group_id) ?? []; arr.push(r.team_id); mMap.set(r.group_id, arr)
-        }
-        groupList = (rawGroups ?? []).map((g: any) => ({
-          id: g.id, group_number: g.group_number, name: g.name,
-          teamIds: mMap.get(g.id) ?? [],
-        }))
-      }
-
-      if (gen !== genRef.current) return
-
-      // ── Commit — all state updated atomically from the same fetch ──────────
-      setTeams(teamList)
-      setTeamMatches(matchList)
-      setGroups(groupList)
-      setStage(rawStage as StageRow | null)
-    } finally {
-      inflightRef.current = false
-      if (gen === genRef.current) setLoading(false)
-    }
+    // Populate the ref FIRST — match loading reads from it
+    teamNamesRef.current = new Map(list.map(t => [t.id, t]))
+    setTeams(list)
+    return true
   }, [tournamentId])
 
-  useEffect(() => { loadData() }, [loadData])
+  // ── Load match data — reads names from the stable ref ────────────────────
+  const loadMatches = useCallback(async (gen: number): Promise<boolean> => {
+    // Fetch matches flat (no FK joins)
+    const { data: rawMatches } = await sb
+      .from('team_matches')
+      .select('id, team_a_id, team_b_id, round, round_name, status, team_a_score, team_b_score, winner_team_id, group_id')
+      .eq('tournament_id', tournamentId)
+      .order('round')
+    if (gen !== genRef.current) return false
 
-  // Debounced realtime — collapses rapid events into one fetch after 500ms quiet
+    const matchIds = (rawMatches ?? []).map((m: any) => m.id as string)
+
+    // Fetch submatches flat
+    const { data: rawSMs } = matchIds.length > 0
+      ? await sb.from('team_match_submatches')
+          .select('id, team_match_id, match_order, label, player_a_name, player_b_name, team_a_player_id, team_b_player_id, team_a_player2_id, team_b_player2_id, match_id')
+          .in('team_match_id', matchIds)
+          .order('match_order')
+      : { data: [] }
+    if (gen !== genRef.current) return false
+
+    // Fetch rubber scoring flat
+    const smMatchIds = ((rawSMs ?? []) as any[]).map(s => s.match_id).filter(Boolean) as string[]
+    const { data: rawScoring } = smMatchIds.length > 0
+      ? await sb.from('matches')
+          .select('id, player1_games, player2_games, status, match_format')
+          .in('id', smMatchIds)
+      : { data: [] }
+    if (gen !== genRef.current) return false
+
+    // Index scoring and submatches
+    const scoringIdx = new Map(((rawScoring ?? []) as any[]).map(s => [s.id as string, s]))
+    const smIdx = new Map<string, Submatch[]>()
+    for (const sm of (rawSMs ?? []) as any[]) {
+      const list = smIdx.get(sm.team_match_id) ?? []
+      list.push({
+        id: sm.id, match_order: sm.match_order, label: sm.label,
+        player_a_name: sm.player_a_name, player_b_name: sm.player_b_name,
+        team_a_player_id: sm.team_a_player_id, team_b_player_id: sm.team_b_player_id,
+        team_a_player2_id: sm.team_a_player2_id, team_b_player2_id: sm.team_b_player2_id,
+        match_id: sm.match_id,
+        scoring: sm.match_id ? (scoringIdx.get(sm.match_id) ?? null) : null,
+      })
+      smIdx.set(sm.team_match_id, list)
+    }
+
+    // Resolve names from the STABLE REF — never from component state
+    const nameMap = teamNamesRef.current
+    const matchList: TeamMatchRich[] = (rawMatches ?? []).map((m: any) => {
+      const tA = nameMap.get(m.team_a_id as string)
+      const tB = nameMap.get(m.team_b_id as string)
+      return {
+        id: m.id,
+        team_a_id:      m.team_a_id,
+        team_b_id:      m.team_b_id,
+        team_a_name:    tA?.name  ?? `[${String(m.team_a_id).slice(0,6)}]`,
+        team_b_name:    tB?.name  ?? `[${String(m.team_b_id).slice(0,6)}]`,
+        team_a_color:   tA?.color ?? '#888',
+        team_b_color:   tB?.color ?? '#888',
+        round:          m.round,
+        round_name:     m.round_name,
+        status:         m.status,
+        team_a_score:   m.team_a_score,
+        team_b_score:   m.team_b_score,
+        winner_team_id: m.winner_team_id,
+        group_id:       m.group_id,
+        submatches: (smIdx.get(m.id) ?? []).sort((a, b) => a.match_order - b.match_order),
+      }
+    })
+
+    setTeamMatches(matchList)
+    return true
+  }, [tournamentId])
+
+  // ── Load stage + groups ───────────────────────────────────────────────────
+  const loadGroups = useCallback(async (gen: number): Promise<boolean> => {
+    const { data: rawStage } = await sb
+      .from('stages').select('id, config')
+      .eq('tournament_id', tournamentId).eq('stage_number', 1).maybeSingle()
+    if (gen !== genRef.current) return false
+
+    let groupList: RRGroup[] = []
+    if (rawStage) {
+      const { data: rawGroups } = await sb
+        .from('rr_groups').select('id, group_number, name')
+        .eq('stage_id', rawStage.id).order('group_number')
+      if (gen !== genRef.current) return false
+
+      const gIds = (rawGroups ?? []).map((g: any) => g.id as string)
+      const { data: rawMembers } = gIds.length > 0
+        ? await sb.from('team_rr_group_members').select('group_id, team_id').in('group_id', gIds)
+        : { data: [] }
+      if (gen !== genRef.current) return false
+
+      const mMap = new Map<string, string[]>()
+      for (const r of (rawMembers ?? []) as any[]) {
+        const arr = mMap.get(r.group_id) ?? []; arr.push(r.team_id); mMap.set(r.group_id, arr)
+      }
+      groupList = (rawGroups ?? []).map((g: any) => ({
+        id: g.id, group_number: g.group_number, name: g.name,
+        teamIds: mMap.get(g.id) ?? [],
+      }))
+    }
+
+    setStage(rawStage as StageRow | null)
+    setGroups(groupList)
+    return true
+  }, [tournamentId])
+
+  // ── Full initial load ─────────────────────────────────────────────────────
+  const loadData = useCallback(async (silent = false) => {
+    const gen = ++genRef.current
+    if (!silent) setLoading(true)
+
+    // Teams MUST complete before matches — names are read from the ref
+    if (teamNamesRef.current.size === 0) {
+      await loadTeams()
+      if (gen !== genRef.current) return
+    }
+    await loadMatches(gen)
+    await loadGroups(gen)
+    if (gen === genRef.current) setLoading(false)
+  }, [loadTeams, loadMatches, loadGroups])
+
+  // Initial mount load
+  useEffect(() => {
+    loadTeams().then(() => {
+      const gen = ++genRef.current
+      Promise.all([loadMatches(gen), loadGroups(gen)])
+        .then(() => { if (gen === genRef.current) setLoading(false) })
+    })
+  }, [tournamentId])
+
+  // Realtime: only refresh matches + groups (NOT teams — they never change)
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null
     const debounced = () => {
       if (timer) clearTimeout(timer)
-      timer = setTimeout(() => loadData(true), 500)
+      timer = setTimeout(() => {
+        const gen = ++genRef.current
+        loadMatches(gen).then(() => loadGroups(gen))
+      }, 400)
     }
     const ch = sb.channel(`team-group-${tournamentId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'team_matches',         filter: `tournament_id=eq.${tournamentId}` }, debounced)
@@ -351,7 +382,7 @@ function useTeamGroupData(tournamentId: string) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, debounced)
       .subscribe()
     return () => { sb.removeChannel(ch); if (timer) clearTimeout(timer) }
-  }, [tournamentId, loadData])
+  }, [tournamentId, loadMatches, loadGroups])
 
   return { teams, teamMatches, groups, stage, loading, loadData }
 }
