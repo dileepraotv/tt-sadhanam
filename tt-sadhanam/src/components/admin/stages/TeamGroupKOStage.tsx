@@ -1035,7 +1035,7 @@ function RubberScorer({
       // Reset: mark match as pending and delete existing game rows
       const { deleteGameScore } = await import('@/lib/actions/matches')
       for (const g of games) {
-        await deleteGameScore(g.id, submatch.match_id!)
+        await deleteGameScore(submatch.match_id!, g.game_number)
       }
       // Also reset the match status to pending via a direct update
       await supabase.from('matches').update({
