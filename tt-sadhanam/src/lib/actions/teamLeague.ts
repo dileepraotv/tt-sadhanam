@@ -331,14 +331,13 @@ export async function updateSubmatchResult(
   if (!submatch) return {}  // not a team submatch
 
   // Step 2: load the parent team_match (flat, no FK joins)
+  // Also fetch round + group_id so we know whether this is a group or KO match
   const { data: teamMatch } = await supabase
     .from('team_matches')
-    .select('id, team_a_id, team_b_id, status')
+    .select('id, team_a_id, team_b_id, status, round, group_id')
     .eq('id', submatch.team_match_id)
     .single()
   if (!teamMatch) return {}
-  // If already complete, re-check whether we need to propagate KO winner
-  // but don't recount (avoids double-propagation)
   if (teamMatch.status === 'complete') return {}
 
   // Step 3: recount ALL completed submatches for this team match from scratch.
@@ -376,7 +375,11 @@ export async function updateSubmatchResult(
     completed_at:   isComplete ? new Date().toISOString() : null,
   }).eq('id', submatch.team_match_id)
 
-  if (isComplete && winnerId) {
+  // ONLY propagate to next KO round for actual knockout matches (round >= 900).
+  // Group stage matches (group_id != null, round < 900) MUST NOT propagate —
+  // they would corrupt other group fixtures by overwriting team_a_id/team_b_id.
+  const isKOMatch = !teamMatch.group_id && teamMatch.round >= 900
+  if (isComplete && winnerId && isKOMatch) {
     await updateTeamKOWinner(tournamentId, submatch.team_match_id, winnerId)
   }
 
@@ -1022,20 +1025,24 @@ export async function updateTeamKOWinner(
 
   const { data: teamMatch } = await supabase
     .from('team_matches')
-    .select('round')
+    .select('round, group_id')
     .eq('id', teamMatchId)
     .single()
   if (!teamMatch) return {}
 
+  // Defence-in-depth: never propagate from group stage matches
+  if (teamMatch.group_id != null || teamMatch.round < 900) return {}
+
   const currentRound = teamMatch.round
   const nextRound    = currentRound + 1
 
-  // Check if there are any matches in the next round
+  // Check if there are any KO matches in the next round
   const { data: nextRoundMatches } = await supabase
     .from('team_matches')
     .select('id, team_a_id, team_b_id')
     .eq('tournament_id', tournamentId)
     .eq('round', nextRound)
+    .is('group_id', null)
     .order('created_at')
 
   if (!nextRoundMatches || nextRoundMatches.length === 0) {
@@ -1050,6 +1057,7 @@ export async function updateTeamKOWinner(
     .select('id')
     .eq('tournament_id', tournamentId)
     .eq('round', currentRound)
+    .is('group_id', null)
     .order('created_at')
 
   const position = (currentRoundMatches ?? []).findIndex(m => m.id === teamMatchId)
