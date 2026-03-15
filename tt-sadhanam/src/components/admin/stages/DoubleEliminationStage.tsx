@@ -40,6 +40,8 @@ export function DoubleEliminationStage({ tournament, players, matches, matchBase
   const gfMatches   = matches.filter(m => m.bracket_side === 'grand_final')
   // Detect schema missing bracket_side (all null) — migration not yet run
   const bracketSideMissing = isGenerated && matches.length > 0 && wbMatches.length === 0 && lbMatches.length === 0 && gfMatches.length === 0
+  // Detect partial bracket: LB missing but WB present (old duplicate-key bug)
+  const lbMissing = isGenerated && wbMatches.length > 0 && lbMatches.length === 0 && !bracketSideMissing
   const hasScores   = matches.some(m => m.status === 'complete' || m.status === 'live')
 
   const bracketSize  = nextPowerOf2(players.length)
@@ -150,6 +152,24 @@ export function DoubleEliminationStage({ tournament, players, matches, matchBase
               The <code className="font-mono bg-amber-100 dark:bg-amber-800/40 px-1 rounded">bracket_side</code> column is missing.
               Run <strong>schema-migration-v6-team-ko.sql</strong> on your Supabase database, then reset and regenerate this bracket.
             </p>
+          </div>
+        </div>
+      )}
+      {lbMissing && (
+        <div className="rounded-xl border border-orange-300 bg-orange-50 dark:bg-orange-900/20 dark:border-orange-700/50 px-4 py-3 flex gap-3 items-start">
+          <Shield className="h-4 w-4 text-orange-600 dark:text-orange-400 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-orange-800 dark:text-orange-300">Losers bracket missing — reset required</p>
+            <p className="text-xs text-orange-700 dark:text-orange-400 mt-0.5">
+              This bracket was generated with an older version that had a match-numbering bug.
+              The Losers Bracket matches were never created. Please reset and regenerate to fix this.
+            </p>
+            <button
+              onClick={() => setShowReset(true)}
+              className="mt-2 text-xs font-bold px-3 py-1.5 rounded-lg bg-orange-500 text-white hover:bg-orange-600 transition-colors"
+            >
+              Reset &amp; Regenerate
+            </button>
           </div>
         </div>
       )}
