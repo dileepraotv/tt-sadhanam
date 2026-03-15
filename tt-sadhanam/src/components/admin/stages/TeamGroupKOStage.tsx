@@ -38,7 +38,7 @@ import {
   finalizeTeamGroups, resetTeamGroupStage, updateTeamGroupMatchWinner,
 } from '@/lib/actions/teamGroupKO'
 import { saveGameScore, declareMatchWinner, updateMatchFormat } from '@/lib/actions/matches'
-import { RubberScorer, validateTTScore, type RubberSubmatch } from '@/components/shared/RubberScorer'
+import { RubberScorer, type RubberSubmatch } from '@/components/shared/RubberScorer'
 import { computeGroupLayout, groupLayoutSummary, snakeAssign } from '@/lib/roundrobin/groupLayout'
 import type { MatchFormat } from '@/lib/types'
 
@@ -909,7 +909,7 @@ type GameLocal = { s1: string; s2: string }
 // Rules: first to 11, win by 2; if both ≥ 10 (deuce) must win by exactly 2
 // ─────────────────────────────────────────────────────────────────────────────
 
-// validateTTScore imported from @/components/shared/RubberScorer
+// RubberScorer — inline game-score entry for one rubber
 
 // RubberScorer is imported from @/components/shared/RubberScorer
 // This thin adapter translates local Submatch type to the shared interface

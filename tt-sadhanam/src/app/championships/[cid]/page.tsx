@@ -1,9 +1,10 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { Trophy, Calendar, MapPin, ArrowRight, Users, Swords, Layers } from 'lucide-react'
+import { Trophy, Calendar, MapPin, ArrowRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { Header }   from '@/components/shared/Header'
 import { Breadcrumb } from '@/components/shared/Breadcrumb'
+import { FormatTypeBadge } from '@/components/shared/FormatTypeBadge'
 import { Badge }    from '@/components/ui/index'
 import { LiveBadge } from '@/components/shared/LiveBadge'
 import type { Championship, Tournament } from '@/lib/types'
@@ -205,48 +206,5 @@ export default async function PublicChampionshipPage({ params }: PageProps) {
 
       </main>
     </div>
-  )
-}
-
-function FormatTypeBadge({ formatType }: { formatType: string | null }) {
-  if (formatType === 'multi_rr_to_knockout') {
-    return (
-      <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 border border-orange-200 dark:border-orange-800/50">
-        <Layers className="h-2.5 w-2.5" /> Groups→KO
-      </span>
-    )
-  }
-  if (formatType === 'single_round_robin') {
-    return (
-      <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800/50">
-        <Users className="h-2.5 w-2.5" /> Round Robin
-      </span>
-    )
-  }
-  if (formatType === 'team_league') {
-    return (
-      <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/50">
-        <Users className="h-2.5 w-2.5" /> Team RR+KO
-      </span>
-    )
-  }
-  if (formatType === 'team_league_ko') {
-    return (
-      <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/50">
-        <Users className="h-2.5 w-2.5" /> Corbillon
-      </span>
-    )
-  }
-  if (formatType === 'team_league_swaythling') {
-    return (
-      <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-800/50">
-        <Users className="h-2.5 w-2.5" /> Swaythling
-      </span>
-    )
-  }
-  return (
-    <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700/50">
-      <Swords className="h-2.5 w-2.5" /> Knockout
-    </span>
   )
 }

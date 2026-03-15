@@ -1,5 +1,7 @@
 import { redirect } from 'next/navigation'
 import { getUser, createClient } from '@/lib/supabase/server'
+import { Header }    from '@/components/shared/Header'
+import { Breadcrumb } from '@/components/shared/Breadcrumb'
 import { MatchScoringClient } from './client'
 import type { Match, Game, Tournament } from '@/lib/types'
 
@@ -38,9 +40,7 @@ export default async function MatchScoringPage({ params, searchParams }: PagePro
     .eq('match_id', params.matchId)
     .order('game_number')
 
-  // ── Team submatch: inject player names from team_match_submatches ─────────
-  // player1_id / player2_id are null for team submatches; names live in the
-  // submatch row. Inject synthetic player objects so the scoring UI works.
+  // ── Team submatch: inject player names ─────────────────────────────────────
   if ((match as unknown as { match_kind?: string }).match_kind === 'team_submatch') {
     const { data: sm } = await supabase
       .from('team_match_submatches')
@@ -70,20 +70,37 @@ export default async function MatchScoringPage({ params, searchParams }: PagePro
 
   const matchKind = (match.match_kind as 'knockout' | 'round_robin') ?? 'knockout'
   const isTeamSubmatch = match.match_kind === 'team_submatch'
-  // For team submatches return to schedule tab preserving round+fix so the correct fixture reopens
   const backTab   = isTeamSubmatch ? 'schedule' : 'stages'
   const backHref  = isTeamSubmatch && searchParams.round
     ? `/admin/tournaments/${params.id}?tab=${backTab}&round=${searchParams.round}&fix=${searchParams.fix ?? ''}`
     : `/admin/tournaments/${params.id}?tab=${backTab}`
 
+  // Round label for breadcrumb
+  const roundLabel = (match as unknown as { round_name?: string | null }).round_name
+    ?? `Round ${(match as unknown as { round?: number }).round ?? ''}`
+
   return (
-    <MatchScoringClient
-      initialMatch={match as unknown as Match}
-      initialGames={(games ?? []) as unknown as Game[]}
-      tournament={tournament as unknown as Tournament}
-      backHref={backHref}
-      groupName={groupName}
-      matchKind={matchKind}
-    />
+    <div className="min-h-screen flex flex-col">
+      <Header isAdmin user={user} />
+      <Breadcrumb
+        variant="admin"
+        items={[
+          { label: 'My Championships', href: '/admin/championships' },
+          { label: tournament.name,    href: `/admin/tournaments/${params.id}` },
+          { label: roundLabel },
+        ]}
+      />
+      <main className="flex-1">
+        <MatchScoringClient
+          initialMatch={match as unknown as Match}
+          initialGames={(games ?? []) as unknown as Game[]}
+          tournament={tournament as unknown as Tournament}
+          backHref={backHref}
+          groupName={groupName}
+          matchKind={matchKind}
+        />
+      </main>
+    </div>
   )
 }
+

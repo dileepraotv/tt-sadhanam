@@ -3,18 +3,49 @@
 /**
  * MatchUI — shared primitives used across all event types (admin + public).
  *
+ * ── Canonical design tokens ───────────────────────────────────────────────────
+ * WINNER_NAME_CLS / WINNER_SCORE_CLS  — emerald, used universally for winner
+ * LOSER_NAME_CLS  / LOSER_SCORE_CLS   — muted, used universally for loser
+ * GAME_CHIP_WIN_CLS / GAME_CHIP_LOSS_CLS — orange game chips (won) / muted (lost)
+ *
+ * Rule: Orange = LIVE/ACTIVE only. Emerald = WINNER/COMPLETE.
+ * Never use orange to color a winner's name or sets-won count.
+ *
  * WinnerTrophy   — always reserves the same fixed width so player names
  *                  never shift when a winner is or isn't shown. Use it
- *                  everywhere a trophy needs to appear next to a player name.
+ *                  everywhere. NEVER use the 🏆 emoji — cross-platform rendering
+ *                  is inconsistent.
  *
  * matchStatusClasses — returns consistent Tailwind classes for the outer
  *                  wrapper of any match/fixture card depending on status.
  *
- * MatchStatusBadge — small pill badge (LIVE / Done / vs) standardised.
+ * MatchStatusBadge — single pill badge (LIVE / ✓ Done / vs) used everywhere.
+ *                    Replaces inline spans in MatchCard, TeamMatchCard,
+ *                    and the private StatusPill in PublicMatchCard.
  */
 
 import { Trophy } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { LiveBadge } from '@/components/shared/LiveBadge'
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Canonical color tokens
+// Import these instead of hardcoding class strings in individual components.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Winning player NAME text — emerald. */
+export const WINNER_NAME_CLS  = 'font-bold text-emerald-600 dark:text-emerald-400'
+/** Winning player SETS WON count — emerald monospaced. */
+export const WINNER_SCORE_CLS = 'font-bold tabular-nums text-emerald-600 dark:text-emerald-400'
+/** Losing player name text — muted. */
+export const LOSER_NAME_CLS   = 'font-normal text-muted-foreground'
+/** Losing player sets-won count — muted. */
+export const LOSER_SCORE_CLS  = 'tabular-nums text-muted-foreground/50'
+/** Game chip — this player won that game. Orange accent (active/scored). */
+export const GAME_CHIP_WIN_CLS =
+  'text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/30 border-orange-200 dark:border-orange-800/40'
+/** Game chip — this player lost that game. Muted. */
+export const GAME_CHIP_LOSS_CLS = 'text-muted-foreground bg-muted/60 border-border/40'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // WinnerTrophy
@@ -88,19 +119,35 @@ interface BadgeProps {
   className?: string
 }
 
+/**
+ * MatchStatusBadge — canonical status pill for all match cards.
+ *
+ * live     → <LiveBadge />          (orange border, pulsing dot)
+ * complete → "✓ Done" emerald       (matches WinnerTrophy color)
+ * bye      → "BYE" muted
+ * pending  → "vs" muted/60
+ *
+ * This replaces:
+ *   - The inline <span> in MatchCard.tsx ("✓ Done" / "BYE")
+ *   - The private StatusPill in PublicMatchCard.tsx
+ *   - The inline "Done" text in TeamMatchCard.tsx
+ */
 export function MatchStatusBadge({ status, className }: BadgeProps) {
   const isComplete = status === 'complete'
   const isLive     = status === 'live'
+  const isBye      = status === 'bye'
+
+  if (isLive) return <LiveBadge className={className} />
 
   return (
     <span className={cn(
-      'shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide',
-      isLive     && 'bg-orange-500 text-white',
-      isComplete && 'bg-muted text-muted-foreground',
-      !isLive && !isComplete && 'bg-muted text-muted-foreground/60',
+      'shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wider',
+      isComplete && 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20',
+      isBye      && 'bg-muted text-muted-foreground/70',
+      !isComplete && !isBye && 'bg-muted text-muted-foreground/60',
       className,
     )}>
-      {isLive ? 'LIVE' : isComplete ? 'Done' : 'vs'}
+      {isComplete ? '✓ Done' : isBye ? 'BYE' : 'vs'}
     </span>
   )
 }

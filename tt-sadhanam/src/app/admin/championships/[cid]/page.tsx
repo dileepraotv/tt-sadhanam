@@ -1,41 +1,18 @@
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import {
-  Plus, Trophy, Calendar, MapPin, ArrowRight, Users, Swords, Layers
+  Plus, Trophy, Calendar, MapPin, ArrowRight
 } from 'lucide-react'
 import { getUser, createClient } from '@/lib/supabase/server'
 import { Header }    from '@/components/shared/Header'
 import { Breadcrumb } from '@/components/shared/Breadcrumb'
+import { FormatTypeBadge } from '@/components/shared/FormatTypeBadge'
 import { Button }    from '@/components/ui/button'
 import { Badge }     from '@/components/ui/index'
 import { LiveBadge } from '@/components/shared/LiveBadge'
 import { ChampionshipAdminClient, EventActions } from './client'
 import type { Championship, Tournament } from '@/lib/types'
 import { formatFormatLabel } from '@/lib/utils'
-
-function FormatTypeLabel({ t }: { t: string | undefined }) {
-  if (!t || t === 'single_knockout')
-    return <span className="flex items-center gap-1 text-[10px] font-semibold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800/60 px-1.5 py-0.5 rounded-full border border-slate-200 dark:border-slate-700/60"><Swords className="h-3 w-3" /> Singles - KO</span>
-  if (t === 'single_round_robin')
-    return <span className="flex items-center gap-1 text-[10px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded-full border border-blue-200 dark:border-blue-800/60"><Users className="h-3 w-3" /> Singles - RR+KO</span>
-  if (t === 'multi_rr_to_knockout')
-    return <span className="flex items-center gap-1 text-[10px] font-semibold text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 px-1.5 py-0.5 rounded-full border border-orange-200 dark:border-orange-800/60"><Layers className="h-3 w-3" /> Singles - Groups+KO</span>
-  if (t === 'pure_round_robin')
-    return <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 px-1.5 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800/60"><Users className="h-3 w-3" /> Singles - League</span>
-  if (t === 'double_elimination')
-    return <span className="flex items-center gap-1 text-[10px] font-semibold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 px-1.5 py-0.5 rounded-full border border-purple-200 dark:border-purple-800/60"><Layers className="h-3 w-3" /> Singles - DE</span>
-  if (t === 'team_league')
-    return <span className="flex items-center gap-1 text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 px-1.5 py-0.5 rounded-full border border-indigo-200 dark:border-indigo-800/60"><Users className="h-3 w-3" /> Teams - RR+KO</span>
-  if (t === 'team_league_ko')
-    return <span className="flex items-center gap-1 text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 px-1.5 py-0.5 rounded-full border border-indigo-200 dark:border-indigo-800/60"><Swords className="h-3 w-3" /> Teams - Corbillon</span>
-  if (t === 'team_league_swaythling')
-    return <span className="flex items-center gap-1 text-[10px] font-semibold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 px-1.5 py-0.5 rounded-full border border-violet-200 dark:border-violet-800/60"><Swords className="h-3 w-3" /> Teams - Swaythling KO</span>
-  if (t === 'team_group_corbillon')
-    return <span className="flex items-center gap-1 text-[10px] font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-900/20 px-1.5 py-0.5 rounded-full border border-rose-200 dark:border-rose-800/60"><Layers className="h-3 w-3" /> Teams - Corbillon Group KO</span>
-  if (t === 'team_group_swaythling')
-    return <span className="flex items-center gap-1 text-[10px] font-semibold text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/20 px-1.5 py-0.5 rounded-full border border-teal-200 dark:border-teal-800/60"><Layers className="h-3 w-3" /> Teams - Swaythling Group KO</span>
-  return <span className="flex items-center gap-1 text-[10px] font-semibold text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full border border-border"><Layers className="h-3 w-3" /> {t}</span>
-}
 
 interface PageProps { params: { cid: string } }
 
@@ -212,7 +189,7 @@ export default async function AdminChampionshipPage({ params }: PageProps) {
                     </div>
 
                     <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                      <FormatTypeLabel t={ev.format_type} />
+                      <FormatTypeBadge formatType={ev.format_type} size="sm" />
                       {!['team_league','team_league_ko','team_league_swaythling',
                           'team_group_corbillon','team_group_swaythling'].includes(ev.format_type ?? '') && (
                         <span>{formatFormatLabel(ev.format)}</span>

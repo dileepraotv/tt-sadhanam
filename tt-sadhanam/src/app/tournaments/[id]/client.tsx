@@ -205,7 +205,10 @@ export function PublicTournamentClient({
       />
       <Breadcrumb
         variant="public"
-        items={[{ label: tournament.name }]}
+        items={[
+          { label: 'Championships', href: '/championships' },
+          { label: tournament.name },
+        ]}
       />
 
       {/* ── Hero ── */}

@@ -19,6 +19,7 @@ import { toast } from '@/components/ui/toaster'
 import { createClient } from '@/lib/supabase/client'
 import { saveGameScore, declareMatchWinner, updateMatchFormat } from '@/lib/actions/matches'
 import type { MatchFormat } from '@/lib/types'
+import { validateGameScore, formatValidationErrors } from '@/lib/scoring/engine'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -42,17 +43,24 @@ export interface RubberSubmatch {
 type GameLocal = { s1: string; s2: string }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Validation
+// Validation bridge
+// Wraps the canonical scoring engine so call sites keep the same (s1,s2)→string|null
+// signature they had before, while the actual rules live in one place.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function validateTTScore(s1: number, s2: number): string | null {
-  if (s1 < 0 || s2 < 0)           return 'Scores cannot be negative'
-  const max = Math.max(s1, s2), min = Math.min(s1, s2)
-  if (max < 11)                    return `Winner needs at least 11 points (got ${max})`
-  if (min >= 10 && max - min < 2)  return `At deuce (both ≥ 10), must win by 2 — ${s1}-${s2} is invalid`
-  if (min >= 10 && max - min > 2)  return `At deuce, must win by exactly 2 — ${s1}-${s2} is invalid`
-  if (min < 10 && max > 11)        return `${s1}-${s2} is invalid — game ends at 11 when opponent has < 10`
-  return null
+/**
+ * Validates a TT game score using the canonical scoring engine.
+ * Returns a human-readable error string, or null if valid.
+ *
+ * Previously this was a local duplicate (validateTTScore). Now it delegates
+ * to validateGameScore from lib/scoring/engine.ts so there is a single source
+ * of truth for table tennis scoring rules across inline team scoring and the
+ * full-page individual scoring UI.
+ */
+function validateScore(s1: number, s2: number): string | null {
+  const result = validateGameScore({ score1: s1, score2: s2 })
+  if (result.ok) return null
+  return formatValidationErrors(result)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -125,7 +133,7 @@ export function RubberScorer({
       if (row.s1 !== '' && row.s2 !== '') {
         const s1 = parseInt(row.s1, 10), s2 = parseInt(row.s2, 10)
         if (!isNaN(s1) && !isNaN(s2)) {
-          const err = validateTTScore(s1, s2)
+          const err = validateScore(s1, s2)
           setScoreErrors(prev => ({ ...prev, [gn]: err ?? '' }))
         }
       } else {
@@ -144,7 +152,7 @@ export function RubberScorer({
     for (const { gn, sc } of entries) {
       const s1 = parseInt(sc!.s1, 10), s2 = parseInt(sc!.s2, 10)
       if (isNaN(s1) || isNaN(s2)) continue
-      const err = validateTTScore(s1, s2)
+      const err = validateScore(s1, s2)
       if (err) { toast({ title: `Game ${gn}: ${err}`, variant: 'destructive' }); return }
     }
     setSaving(true)

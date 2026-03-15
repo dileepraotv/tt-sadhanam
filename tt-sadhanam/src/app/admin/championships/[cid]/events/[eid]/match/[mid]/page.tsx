@@ -1,5 +1,7 @@
 import { redirect, notFound } from 'next/navigation'
 import { getUser, createClient } from '@/lib/supabase/server'
+import { Header }    from '@/components/shared/Header'
+import { Breadcrumb } from '@/components/shared/Breadcrumb'
 import { MatchScoringClient } from '@/app/admin/tournaments/[id]/match/[matchId]/client'
 import type { Match, Game, Tournament } from '@/lib/types'
 
@@ -16,7 +18,7 @@ export default async function EventMatchPage({ params, searchParams }: PageProps
   // Verify championship ownership
   const { data: champ } = await supabase
     .from('championships')
-    .select('id')
+    .select('id, name')
     .eq('id', params.cid)
     .eq('created_by', user.id)
     .single()
@@ -48,9 +50,6 @@ export default async function EventMatchPage({ params, searchParams }: PageProps
     .order('game_number')
 
   // ── Team submatch: inject player names from team_match_submatches ─────────
-  // player1_id / player2_id are null for team submatches; names live in the
-  // submatch row. We also fall back to resolving from player IDs if names
-  // haven't been explicitly saved yet (auto-assign path).
   if ((match as unknown as { match_kind?: string }).match_kind === 'team_submatch') {
     const { data: sm } = await supabase
       .from('team_match_submatches')
@@ -58,7 +57,6 @@ export default async function EventMatchPage({ params, searchParams }: PageProps
       .eq('match_id', params.mid)
       .single()
     if (sm) {
-      // Resolve names: prefer saved name, fall back to player-id lookup
       let p1Name: string | null = sm.player_a_name ?? null
       let p2Name: string | null = sm.player_b_name ?? null
 
@@ -91,19 +89,16 @@ export default async function EventMatchPage({ params, searchParams }: PageProps
     }
   }
 
-  // ── Determine correct back tab based on format_type + match_kind ───────────
+  // ── Determine correct back tab ─────────────────────────────────────────────
   const formatType   = ev.format_type ?? 'single_knockout'
   const isMultiStage = formatType === 'multi_rr_to_knockout'
   const isSingleRR   = formatType === 'single_round_robin'
   const matchKind    = (match as unknown as { match_kind?: string }).match_kind ?? 'knockout'
   const isRRMatch    = matchKind === 'round_robin'
-
-  // Fix: map each format + match kind to the correct tab name
   const isTeamGroupKO = formatType === 'team_group_corbillon' || formatType === 'team_group_swaythling'
 
   let backTab: string
   if (isTeamGroupKO) {
-    // team_group formats: always go back to 'teams' tab (which hosts the full stage UI)
     backTab = 'teams'
   } else if (isRRMatch) {
     backTab = isSingleRR ? 'groups' : 'stage1'
@@ -117,7 +112,7 @@ export default async function EventMatchPage({ params, searchParams }: PageProps
     backTab = 'stages'
   }
 
-  // ── Load group info + resolve group index for "return to correct group" ────
+  // ── Load group info ────────────────────────────────────────────────────────
   let groupName:  string | null = null
   let groupIndex: number        = 0
 
@@ -133,7 +128,6 @@ export default async function EventMatchPage({ params, searchParams }: PageProps
       groupName = grp?.name ?? null
 
       if (grp?.stage_id && grp?.group_number != null) {
-        // Count groups with lower group_number in the same stage → gives 0-based index
         const { count } = await supabase
           .from('rr_groups')
           .select('id', { count: 'exact', head: true })
@@ -151,14 +145,33 @@ export default async function EventMatchPage({ params, searchParams }: PageProps
     ? `/admin/championships/${params.cid}/events/${params.eid}?tab=${backTab}&round=${searchParams.round}&fix=${searchParams.fix ?? ''}`
     : `/admin/championships/${params.cid}/events/${params.eid}?tab=${backTab}`
 
+  // ── Match round label for breadcrumb ───────────────────────────────────────
+  const roundLabel = (match as unknown as { round_name?: string | null }).round_name
+    ?? `Round ${(match as unknown as { round?: number }).round ?? ''}`
+
   return (
-    <MatchScoringClient
-      initialMatch={match as unknown as Match}
-      initialGames={(games ?? []) as unknown as Game[]}
-      tournament={ev as unknown as Tournament}
-      backHref={backHref}
-      groupName={groupName}
-      matchKind={isRRMatch ? 'round_robin' : 'knockout'}
-    />
+    <div className="min-h-screen flex flex-col">
+      <Header isAdmin user={user} />
+      <Breadcrumb
+        variant="admin"
+        items={[
+          { label: 'My Championships',  href: '/admin/championships' },
+          { label: champ.name,          href: `/admin/championships/${params.cid}` },
+          { label: ev.name,             href: backHref },
+          { label: roundLabel },
+        ]}
+      />
+      <main className="flex-1">
+        <MatchScoringClient
+          initialMatch={match as unknown as Match}
+          initialGames={(games ?? []) as unknown as Game[]}
+          tournament={ev as unknown as Tournament}
+          backHref={backHref}
+          groupName={groupName}
+          matchKind={isRRMatch ? 'round_robin' : 'knockout'}
+        />
+      </main>
+    </div>
   )
 }
+

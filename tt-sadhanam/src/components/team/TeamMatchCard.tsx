@@ -21,6 +21,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { TeamMatch, TeamMatchSubmatch, Match } from '@/lib/types'
 import { LiveBadge } from '@/components/shared/LiveBadge'
+import { MatchStatusBadge } from '@/components/shared/MatchUI'
 
 interface Props {
   teamMatch:    TeamMatch
@@ -48,8 +49,9 @@ export function TeamMatchCard({ teamMatch, subMatchScores }: Props) {
     <div
       className={cn(
         'rounded-xl border overflow-hidden transition-colors',
-        isLive ? 'border-orange-400 dark:border-orange-500' : 'border-border',
-        isDone && 'opacity-90',
+        isLive ? 'border-orange-400 dark:border-orange-500 bg-orange-50/30 dark:bg-orange-950/10' : 'border-border',
+        // Standardized: opacity-40 for done (was opacity-90 — too subtle)
+        isDone && 'opacity-40',
       )}
     >
       {/* Header row — click to expand */}
@@ -81,7 +83,7 @@ export function TeamMatchCard({ teamMatch, subMatchScores }: Props) {
 
         {/* Score */}
         <div className="flex items-center gap-2 shrink-0">
-          {isLive && <LiveBadge />}
+          <MatchStatusBadge status={teamMatch.status} />
           <span className={cn(
             'font-mono font-bold text-lg tabular-nums',
             aWon ? 'text-emerald-700 dark:text-emerald-400' : 'text-foreground',
@@ -95,11 +97,6 @@ export function TeamMatchCard({ teamMatch, subMatchScores }: Props) {
           )}>
             {bScore}
           </span>
-          {isDone && (
-            <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider ml-1">
-              Done
-            </span>
-          )}
         </div>
 
         {/* Team B */}

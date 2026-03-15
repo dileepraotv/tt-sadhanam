@@ -4,6 +4,7 @@ import Link               from 'next/link'
 import { getUser, createClient } from '@/lib/supabase/server'
 import { Header }         from '@/components/shared/Header'
 import { Breadcrumb }     from '@/components/shared/Breadcrumb'
+import { FormatTypeBadge } from '@/components/shared/FormatTypeBadge'
 import { Badge, TabsContent } from '@/components/ui/index'
 import { AdminTabs } from '@/components/admin/AdminTabs'
 import { Button }         from '@/components/ui/button'
@@ -374,22 +375,4 @@ function HintBox({ type, children }: { type: 'info' | 'success'; children: React
 function StatusBadge({ status }: { status: string }) {
   const v = status === 'active' ? 'live' : status === 'complete' ? 'success' : 'secondary'
   return <Badge variant={v as 'live' | 'success' | 'secondary'}>{status}</Badge>
-}
-
-function FormatTypeBadge({ formatType }: { formatType: string }) {
-  const map: Record<string, { label: string; color: string }> = {
-    single_knockout:      { label: 'Singles Knockout',            color: 'bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700' },
-    single_round_robin:   { label: 'Singles RR + Knockout',       color: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800' },
-    multi_rr_to_knockout: { label: 'Singles Groups + Knockout',   color: 'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-800' },
-    pure_round_robin:     { label: 'Singles Round Robin',         color: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' },
-    double_elimination:   { label: 'Singles Double Elimination',  color: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800' },
-    team_league:          { label: 'Teams RR + Knockout',         color: 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800' },
-    team_league_ko:       { label: 'Teams Knockout',              color: 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800' },
-  }
-  const { label, color } = map[formatType] ?? { label: formatType, color: 'bg-muted text-muted-foreground border-border' }
-  return (
-    <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full border ${color}`}>
-      {label}
-    </span>
-  )
 }

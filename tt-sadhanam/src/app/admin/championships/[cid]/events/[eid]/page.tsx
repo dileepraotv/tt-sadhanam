@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { getUser, createClient } from '@/lib/supabase/server'
 import { Header }             from '@/components/shared/Header'
 import { Breadcrumb }         from '@/components/shared/Breadcrumb'
+import { FormatTypeBadge }    from '@/components/shared/FormatTypeBadge'
 import { Badge, TabsContent } from '@/components/ui/index'
 import { AdminChampTabs } from '@/components/admin/AdminChampTabs'
 import { Button }             from '@/components/ui/button'
@@ -23,86 +24,7 @@ import type { Tournament, Player, Match, Stage, RRStageConfig } from '@/lib/type
 import { formatDate, formatFormatLabel } from '@/lib/utils'
 import { computeAllGroupStandings, groupProgress } from '@/lib/roundrobin/standings'
 import type { RRGroup, GroupStandings } from '@/lib/roundrobin/types'
-import { Calendar, MapPin, ExternalLink, Layers, Swords, Users } from 'lucide-react'
-
-// ── Format type badge label + icon ────────────────────────────────────────────
-function FormatTypeBadge({ formatType }: { formatType: string | undefined }) {
-  if (!formatType || formatType === 'single_knockout') {
-    return (
-      <span className="flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700/60">
-        <Swords className="h-3 w-3" /> Singles - Knockout
-      </span>
-    )
-  }
-  if (formatType === 'single_round_robin') {
-    return (
-      <span className="flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/60">
-        <Users className="h-3 w-3" /> Singles - RR + Knockout
-      </span>
-    )
-  }
-  if (formatType === 'multi_rr_to_knockout') {
-    return (
-      <span className="flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 border border-orange-200 dark:border-orange-800/60">
-        <Layers className="h-3 w-3" /> Singles - Groups + Knockout
-      </span>
-    )
-  }
-  if (formatType === 'pure_round_robin') {
-    return (
-      <span className="flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60">
-        <Users className="h-3 w-3" /> Singles - Round Robin
-      </span>
-    )
-  }
-  if (formatType === 'double_elimination') {
-    return (
-      <span className="flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/60">
-        <Layers className="h-3 w-3" /> Singles - Double Elimination
-      </span>
-    )
-  }
-  if (formatType === 'team_league') {
-    return (
-      <span className="flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60">
-        <Users className="h-3 w-3" /> Teams - Round Robin + Knockout
-      </span>
-    )
-  }
-  if (formatType === 'team_league_ko') {
-    return (
-      <span className="flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60">
-        <Swords className="h-3 w-3" /> Teams - Knockout (Corbillon)
-      </span>
-    )
-  }
-  if (formatType === 'team_league_swaythling') {
-    return (
-      <span className="flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-800/60">
-        <Swords className="h-3 w-3" /> Teams - Knockout (Swaythling)
-      </span>
-    )
-  }
-  if (formatType === 'team_group_corbillon') {
-    return (
-      <span className="flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/60">
-        <Layers className="h-3 w-3" /> Teams - Groups + KO (Corbillon)
-      </span>
-    )
-  }
-  if (formatType === 'team_group_swaythling') {
-    return (
-      <span className="flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-pink-100 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300 border border-pink-200 dark:border-pink-800/60">
-        <Layers className="h-3 w-3" /> Teams - Groups + KO (Swaythling)
-      </span>
-    )
-  }
-  return (
-    <span className="flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border">
-      <Layers className="h-3 w-3" /> {formatType}
-    </span>
-  )
-}
+import { Calendar, MapPin, ExternalLink } from 'lucide-react'
 
 interface PageProps {
   params:       { cid: string; eid: string }
