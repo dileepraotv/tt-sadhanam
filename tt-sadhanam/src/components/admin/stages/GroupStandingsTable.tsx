@@ -8,7 +8,7 @@
  * Read-only display; scoring links are passed via matchBase.
  */
 
-import { useState } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { MatchCard } from '@/components/bracket/MatchCard'
 import { cn } from '@/lib/utils'
@@ -59,27 +59,46 @@ export function GroupStandingsTable({
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Group tab strip */}
+      {/* Group selector cards — show group name + player dots */}
       <div className="flex flex-wrap gap-2">
         {standings.map((gs, idx) => {
           const played = gs.standings.some(s => s.matchesPlayed > 0)
           const done   = gs.standings.length > 0 && gs.standings.every(s =>
             s.matchesPlayed === gs.standings.length - 1,
           )
+          const isActive = activeIdx === idx
           return (
             <button
               key={gs.group.id}
               onClick={() => setActiveIdx(idx)}
               className={cn(
-                'relative flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-sm font-semibold border transition-all',
-                activeIdx === idx
-                  ? 'bg-primary text-primary-foreground border-primary shadow-sm'
-                  : 'bg-card text-foreground border-border hover:border-orange-400',
+                'flex flex-col gap-2 px-4 py-3 rounded-xl border text-left transition-all min-w-[140px]',
+                isActive
+                  ? 'bg-orange-500 text-white border-orange-500 shadow-md shadow-orange-200/40 dark:shadow-orange-900/20'
+                  : 'bg-card text-foreground border-border hover:border-orange-400 hover:shadow-sm',
               )}
             >
-              {gs.group.name}
-              {done && <span className="text-[10px] opacity-70">✓</span>}
-              {!done && played && <span className="h-1.5 w-1.5 rounded-full bg-orange-400 animate-pulse" />}
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-bold">{gs.group.name}</span>
+                {done && <span className={cn('text-[10px] font-bold', isActive ? 'text-white/80' : 'text-emerald-500')}>✓ Done</span>}
+                {!done && played && <span className={cn('h-2 w-2 rounded-full shrink-0', isActive ? 'bg-white/60' : 'bg-orange-400 animate-pulse')} />}
+              </div>
+              <div className="flex items-center gap-1 flex-wrap">
+                {gs.standings.slice(0, 6).map(s => (
+                  <span key={s.playerId} title={s.playerName}
+                    className={cn(
+                      'text-[10px] font-medium truncate max-w-[70px]',
+                      isActive ? 'text-white/90' : 'text-muted-foreground',
+                    )}>
+                    {s.playerName.split(' ')[0]}
+                  </span>
+                ))}
+                {gs.standings.length > 6 && (
+                  <span className={cn('text-[10px]', isActive ? 'text-white/60' : 'text-muted-foreground/50')}>
+                    +{gs.standings.length - 6}
+                  </span>
+                )}
+              </div>
             </button>
           )
         })}
@@ -246,21 +265,252 @@ function EmptyFixtures() {
 }
 
 // ── Fixture row ────────────────────────────────────────────────────────────────
+// Horizontal layout: [Player1 name] [score] vs [score] [Player2 name]
+// Expands inline to show game score entry when admin clicks Score/Edit
 
 function FixtureRow({ match: m, matchBase, isAdmin }: {
   match:     Match
   matchBase: string
   isAdmin:   boolean
 }) {
-  const isBye = m.status === 'bye'
-  const href  = isAdmin && !isBye ? `${matchBase}/${m.id}` : undefined
+  const [expanded, setExpanded] = useState(false)
+  const isBye      = m.status === 'bye'
+  const isComplete = m.status === 'complete'
+  const isLive     = m.status === 'live'
+  const p1         = m.player1
+  const p2         = m.player2
+  const p1Won      = isComplete && m.winner_id === m.player1_id
+  const p2Won      = isComplete && m.winner_id === m.player2_id
+  const games      = m.games ? [...m.games].sort((a, b) => a.game_number - b.game_number) : []
 
-  // Use MatchCard for a consistent look with the knockout bracket
   return (
-    <MatchCard
-      match={m}
-      isAdmin={isAdmin}
-      href={href}
-    />
+    <div className={cn(
+      'rounded-xl border overflow-hidden transition-colors',
+      isLive     ? 'border-orange-400/70 bg-orange-50/30 dark:bg-orange-950/10' :
+      isComplete ? 'border-border/40 bg-muted/10' :
+                   'border-border bg-card',
+    )}>
+      {/* Main row — always visible */}
+      <div
+        role={isAdmin && !isBye ? 'button' : undefined}
+        onClick={() => isAdmin && !isBye && setExpanded(e => !e)}
+        className={cn(
+          'flex items-center gap-3 px-3 py-2.5',
+          isAdmin && !isBye && 'cursor-pointer hover:bg-muted/20 transition-colors',
+        )}
+      >
+        {/* Player 1 */}
+        <div className="flex items-center gap-1.5 flex-1 min-w-0 justify-end text-right">
+          <span className={cn(
+            'truncate text-sm',
+            p1Won ? 'font-bold text-foreground' : isComplete ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground',
+          )}>
+            {p1?.name ?? '—'}
+          </span>
+          {p1Won && <span className="text-amber-500 text-xs shrink-0">🏆</span>}
+          {(isComplete || isLive) && (
+            <span className={cn(
+              'font-mono font-bold tabular-nums text-sm shrink-0 min-w-[1.5rem] text-right',
+              p1Won ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/60',
+            )}>
+              {m.player1_games}
+            </span>
+          )}
+        </div>
+
+        {/* Centre — vs / status */}
+        <div className="flex flex-col items-center gap-0.5 shrink-0">
+          {isLive ? (
+            <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
+          ) : (
+            <span className="text-[11px] font-bold text-muted-foreground/50">vs</span>
+          )}
+          {isBye && <span className="text-[10px] text-muted-foreground uppercase">bye</span>}
+        </div>
+
+        {/* Player 2 */}
+        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+          {(isComplete || isLive) && (
+            <span className={cn(
+              'font-mono font-bold tabular-nums text-sm shrink-0 min-w-[1.5rem]',
+              p2Won ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/60',
+            )}>
+              {m.player2_games}
+            </span>
+          )}
+          {p2Won && <span className="text-amber-500 text-xs shrink-0">🏆</span>}
+          <span className={cn(
+            'truncate text-sm',
+            p2Won ? 'font-bold text-foreground' : isComplete ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground',
+          )}>
+            {p2?.name ?? '—'}
+          </span>
+        </div>
+
+        {/* Right: score chips + action */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {games.length > 0 && (
+            <div className="hidden sm:flex items-center gap-0.5">
+              {games.map((g, i) => {
+                const p1WonGame = g.winner_id === m.player1_id
+                return (
+                  <span key={i} className={cn(
+                    'text-[10px] font-mono px-1 py-0.5 rounded tabular-nums',
+                    p1WonGame
+                      ? 'bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-400'
+                      : 'bg-muted text-muted-foreground',
+                  )}>
+                    {g.score1}–{g.score2}
+                  </span>
+                )
+              })}
+            </div>
+          )}
+          {isAdmin && !isBye && (
+            <button
+              onClick={e => { e.stopPropagation(); setExpanded(v => !v) }}
+              className={cn(
+                'text-[11px] font-semibold px-2 py-1 rounded-lg border transition-colors whitespace-nowrap',
+                isComplete
+                  ? 'text-emerald-600 border-emerald-200 dark:border-emerald-800/40 hover:bg-emerald-50 dark:hover:bg-emerald-950/30'
+                  : 'text-orange-500 border-orange-200 dark:border-orange-800/40 hover:bg-orange-50 dark:hover:bg-orange-950/30',
+              )}
+            >
+              {expanded ? 'Close' : isComplete ? 'Edit' : 'Score'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Inline score entry */}
+      {expanded && isAdmin && m.id && (
+        <div className="border-t border-border/40 px-3 pb-3 pt-2">
+          <InlineMatchScorer matchId={m.id} player1Name={p1?.name ?? 'Player 1'} player2Name={p2?.name ?? 'Player 2'} />
+        </div>
+      )}
+    </div>
   )
+}
+
+// ── InlineMatchScorer ──────────────────────────────────────────────────────────
+// Minimal inline game-score entry for single-player (singles) matches in RR groups.
+// Uses the same saveGameScore / declareMatchWinner actions as all other scorers.
+
+function InlineMatchScorer({ matchId, player1Name, player2Name }: {
+  matchId:     string
+  player1Name: string
+  player2Name: string
+}) {
+  const [games,       setGames]    = useState<{id:string;game_number:number;score1:number;score2:number}[]>([])
+  const [local,       setLocal]    = useState<Record<number,{s1:string;s2:string}>>({})
+  const [saving,      setSaving]   = useState(false)
+  const [loading,     setLoading_] = useState(true)
+  const [format,      setFormat]   = useState<'bo3'|'bo5'|'bo7'>('bo5')
+  const sb = useRef(createClientForScorer()).current
+
+  const load = useCallback(async () => {
+    setLoading_(true)
+    const [gRes, mRes] = await Promise.all([
+      sb.from('games').select('*').eq('match_id', matchId).order('game_number'),
+      sb.from('matches').select('match_format').eq('id', matchId).single(),
+    ])
+    const gs = gRes.data ?? []
+    setGames(gs)
+    const init: Record<number,{s1:string;s2:string}> = {}
+    for (const g of gs) init[g.game_number] = { s1: String(g.score1 ?? ''), s2: String(g.score2 ?? '') }
+    setLocal(init)
+    if (mRes.data?.match_format) setFormat(mRes.data.match_format as 'bo3'|'bo5'|'bo7')
+    setLoading_(false)
+  }, [matchId])
+
+  useEffect(() => { load() }, [load])
+
+  const maxG = format === 'bo3' ? 3 : format === 'bo7' ? 7 : 5
+
+  const handleSave = async () => {
+    setSaving(true)
+    const entries = Array.from({length:maxG},(_,i)=>i+1)
+      .map(gn=>({gn,sc:local[gn]}))
+      .filter(({sc})=>sc&&!(sc.s1===''&&sc.s2===''))
+    if (!entries.length) { setSaving(false); return }
+    // Reset if match was already complete
+    const isWasComplete = games.length > 0
+    if (isWasComplete) {
+      const { deleteGameScore: del } = await import('@/lib/actions/matches')
+      for (const g of games) await del(matchId, g.game_number)
+      const { createClient: cc } = await import('@/lib/supabase/client')
+      await cc().from('matches').update({status:'pending',winner_id:null,player1_games:0,player2_games:0,completed_at:null}).eq('id',matchId)
+    }
+    const { saveGameScore } = await import('@/lib/actions/matches')
+    for (const {gn,sc} of entries) {
+      const s1=parseInt(sc!.s1,10), s2=parseInt(sc!.s2,10)
+      if(isNaN(s1)||isNaN(s2)) continue
+      const res = await saveGameScore(matchId,gn,s1,s2)
+      if(!res.success) { if(res.error?.includes('Cannot add')||res.error?.includes('already complete')) break }
+    }
+    setSaving(false)
+    await load()
+  }
+
+  if (loading) return <div className="text-xs text-muted-foreground py-2">Loading…</div>
+
+  return (
+    <div className="flex flex-col gap-2">
+      {/* Format pills */}
+      <div className="flex items-center gap-1">
+        {(['bo3','bo5','bo7'] as const).map(f => (
+          <button key={f} onClick={async()=>{setFormat(f);const{updateMatchFormat}=await import('@/lib/actions/matches');await updateMatchFormat(matchId,f)}}
+            className={cn('px-2.5 py-0.5 rounded-full text-[11px] font-bold transition-colors',
+              format===f ? 'bg-orange-500 text-white' : 'text-muted-foreground hover:text-foreground')}>
+            {f==='bo3'?'Best of 3':f==='bo5'?'Best of 5':'Best of 7'}
+          </button>
+        ))}
+      </div>
+      {/* Score grid */}
+      <div className="grid gap-1" style={{gridTemplateColumns:`minmax(80px,1fr) repeat(${maxG},44px)`}}>
+        <div className="text-[10px] font-bold text-muted-foreground uppercase py-1">Player</div>
+        {Array.from({length:maxG},(_,i)=>(
+          <div key={i} className="text-[10px] text-center font-mono text-muted-foreground py-1 font-bold">G{i+1}</div>
+        ))}
+        {/* P1 */}
+        <div className="text-xs font-semibold py-1 truncate self-center">{player1Name}</div>
+        {Array.from({length:maxG},(_,i)=>{
+          const gn=i+1, stored=games.find(g=>g.game_number===gn)
+          const aWon=stored?stored.score1>stored.score2:false
+          return (
+            <input key={gn} type="number" min={0} max={99}
+              value={local[gn]?.s1??''}
+              onChange={e=>setLocal(p=>({...p,[gn]:{...p[gn]??{s1:'',s2:''},s1:e.target.value}}))}
+              className={cn('w-full text-center text-sm font-bold py-1.5 rounded-lg border focus:outline-none focus:ring-2 focus:ring-orange-500/40 [appearance:textfield]',
+                aWon&&stored?'border-emerald-400/50 bg-emerald-50/60 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300':'border-border bg-background')}
+            />
+          )
+        })}
+        {/* P2 */}
+        <div className="text-xs font-semibold py-1 truncate self-center">{player2Name}</div>
+        {Array.from({length:maxG},(_,i)=>{
+          const gn=i+1, stored=games.find(g=>g.game_number===gn)
+          const bWon=stored?stored.score2>stored.score1:false
+          return (
+            <input key={gn} type="number" min={0} max={99}
+              value={local[gn]?.s2??''}
+              onChange={e=>setLocal(p=>({...p,[gn]:{...p[gn]??{s1:'',s2:''},s2:e.target.value}}))}
+              className={cn('w-full text-center text-sm font-bold py-1.5 rounded-lg border focus:outline-none focus:ring-2 focus:ring-orange-500/40 [appearance:textfield]',
+                bWon&&stored?'border-emerald-400/50 bg-emerald-50/60 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300':'border-border bg-background')}
+            />
+          )
+        })}
+      </div>
+      <button onClick={handleSave} disabled={saving}
+        className="self-start mt-1 px-4 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold transition-colors disabled:opacity-50">
+        {saving ? 'Saving…' : 'Save Scores'}
+      </button>
+    </div>
+  )
+}
+
+// lazy supabase client for scorer (avoids SSR issues)
+function createClientForScorer() {
+  const { createClient } = require('@/lib/supabase/client')
+  return createClient()
 }

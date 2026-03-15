@@ -17,8 +17,8 @@
  *   - Admin links to scoring page via matchBasePath
  */
 
-import { useState, useMemo } from 'react'
-import { Trophy, Shield, GitBranch, Swords } from 'lucide-react'
+import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
+import { Trophy, Shield, GitBranch, Swords, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Match } from '@/lib/types'
 import { MatchCard } from '@/components/bracket/MatchCard'
@@ -226,13 +226,12 @@ function BracketPanel({
               {/* Matches */}
               <div className="flex flex-col gap-3">
                 {roundMatches.map(match => (
-                  <MatchCard
+                  <DEMatchCard
                     key={match.id}
                     match={match}
-                    compact
                     isAdmin={isAdmin}
-                    href={matchBasePath ? `${matchBasePath}/${match.id}` : undefined}
-                    onClick={onMatchClick ? () => onMatchClick(match) : undefined}
+                    matchBasePath={matchBasePath}
+                    onMatchClick={onMatchClick}
                   />
                 ))}
               </div>
@@ -287,11 +286,11 @@ function GrandFinalPanel({
         {/* Grand Final */}
         <div className="flex flex-col gap-2">
           <p className="text-xs font-bold uppercase tracking-wider text-center text-muted-foreground">Grand Final</p>
-          <MatchCard
+          <DEMatchCard
             match={gf1}
             isAdmin={isAdmin}
-            href={matchBasePath ? `${matchBasePath}/${gf1.id}` : undefined}
-            onClick={onMatchClick ? () => onMatchClick(gf1) : undefined}
+            matchBasePath={matchBasePath}
+            onMatchClick={onMatchClick}
           />
         </div>
 
@@ -308,11 +307,11 @@ function GrandFinalPanel({
             <p className="text-xs text-center text-muted-foreground">
               LB champion won — one more match required.
             </p>
-            <MatchCard
+            <DEMatchCard
               match={gf2}
               isAdmin={isAdmin}
-              href={matchBasePath ? `${matchBasePath}/${gf2.id}` : undefined}
-              onClick={onMatchClick ? () => onMatchClick(gf2) : undefined}
+              matchBasePath={matchBasePath}
+              onMatchClick={onMatchClick}
             />
           </div>
         )}
@@ -342,4 +341,157 @@ function groupByRound(matches: Match[]): Map<number, Match[]> {
     map.get(m.round)!.push(m)
   }
   return map
+}
+
+
+// ── DEMatchCard — MatchCard with inline scorer for admin ─────────────────────
+function DEMatchCard({ match, isAdmin, matchBasePath, onMatchClick }: {
+  match:          Match
+  isAdmin?:       boolean
+  matchBasePath?: string
+  onMatchClick?:  (match: Match) => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const isBye      = match.status === 'bye'
+  const isComplete = match.status === 'complete'
+
+  // Non-admin or click-handler: use original behaviour
+  if (!isAdmin || onMatchClick) {
+    return (
+      <MatchCard
+        match={match}
+        compact
+        isAdmin={isAdmin}
+        href={matchBasePath ? `${matchBasePath}/${match.id}` : undefined}
+        onClick={onMatchClick ? () => onMatchClick(match) : undefined}
+      />
+    )
+  }
+
+  return (
+    <div className="flex flex-col">
+      <div className="relative">
+        <MatchCard match={match} compact isAdmin={isAdmin} />
+        {!isBye && (
+          <button
+            onClick={() => setExpanded(v => !v)}
+            className={cn(
+              'absolute bottom-1.5 right-2 text-[11px] font-semibold px-2 py-0.5 rounded-md border transition-colors bg-card',
+              isComplete
+                ? 'text-emerald-600 border-emerald-200 dark:border-emerald-800/40 hover:bg-emerald-50'
+                : 'text-orange-500 border-orange-200 dark:border-orange-800/40 hover:bg-orange-50',
+            )}
+          >
+            {expanded ? 'Close' : isComplete ? 'Edit' : 'Score'}
+          </button>
+        )}
+      </div>
+      {expanded && (
+        <DEInlineScorer
+          matchId={match.id}
+          p1Name={match.player1?.name ?? 'Player 1'}
+          p2Name={match.player2?.name ?? 'Player 2'}
+          onSaved={() => setExpanded(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+function DEInlineScorer({ matchId, p1Name, p2Name, onSaved }: {
+  matchId:  string
+  p1Name:   string
+  p2Name:   string
+  onSaved?: () => void
+}) {
+  const [games,   setGames]   = useState<{id:string;game_number:number;score1:number;score2:number}[]>([])
+  const [local,   setLocal]   = useState<Record<number,{s1:string;s2:string}>>({})
+  const [saving,  setSaving]  = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [fmt,     setFmt]     = useState<'bo3'|'bo5'|'bo7'>('bo5')
+  const sbRef = useRef<any>(null)
+  const getSb = useCallback(async () => {
+    if (!sbRef.current) { const { createClient } = await import('@/lib/supabase/client'); sbRef.current = createClient() }
+    return sbRef.current
+  }, [])
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const sb = await getSb()
+    const [gR, mR] = await Promise.all([
+      sb.from('games').select('*').eq('match_id', matchId).order('game_number'),
+      sb.from('matches').select('match_format').eq('id', matchId).single(),
+    ])
+    const gs = gR.data ?? []
+    setGames(gs)
+    const init: Record<number,{s1:string;s2:string}> = {}
+    for (const g of gs) init[g.game_number] = { s1: String(g.score1 ?? ''), s2: String(g.score2 ?? '') }
+    setLocal(init)
+    if (mR.data?.match_format) setFmt(mR.data.match_format as any)
+    setLoading(false)
+  }, [matchId, getSb])
+
+  useEffect(() => { load() }, [load])
+
+  const maxG = fmt === 'bo3' ? 3 : fmt === 'bo7' ? 7 : 5
+
+  const handleSave = async () => {
+    setSaving(true)
+    const entries = Array.from({length: maxG}, (_, i) => i + 1)
+      .map(gn => ({ gn, sc: local[gn] }))
+      .filter(({sc}) => sc && !(sc.s1 === '' && sc.s2 === ''))
+    if (!entries.length) { setSaving(false); return }
+    if (games.length > 0) {
+      const { deleteGameScore } = await import('@/lib/actions/matches')
+      const sb = await getSb()
+      for (const g of games) await deleteGameScore(matchId, g.game_number)
+      await sb.from('matches').update({ status: 'pending', winner_id: null, player1_games: 0, player2_games: 0, completed_at: null }).eq('id', matchId)
+    }
+    const { saveGameScore } = await import('@/lib/actions/matches')
+    for (const { gn, sc } of entries) {
+      const s1 = parseInt(sc!.s1, 10), s2 = parseInt(sc!.s2, 10)
+      if (isNaN(s1) || isNaN(s2)) continue
+      const r = await saveGameScore(matchId, gn, s1, s2)
+      if (!r.success) { if (r.error?.includes('Cannot add') || r.error?.includes('already complete')) break; break }
+    }
+    setSaving(false)
+    await load()
+    onSaved?.()
+  }
+
+  if (loading) return <div className="border border-t-0 border-border/40 rounded-b-xl px-3 pb-2 pt-1.5 text-xs text-muted-foreground">Loading…</div>
+
+  return (
+    <div className="border border-t-0 border-border/40 rounded-b-xl px-3 pb-3 pt-2 bg-card flex flex-col gap-2">
+      <div className="flex items-center gap-1">
+        {(['bo3','bo5','bo7'] as const).map(f => (
+          <button key={f} onClick={async () => { setFmt(f); const { updateMatchFormat } = await import('@/lib/actions/matches'); await updateMatchFormat(matchId, f) }}
+            className={cn('px-2.5 py-0.5 rounded-full text-[11px] font-bold transition-colors',
+              fmt === f ? 'bg-orange-500 text-white' : 'text-muted-foreground hover:text-foreground')}>
+            {f === 'bo3' ? 'Bo3' : f === 'bo5' ? 'Bo5' : 'Bo7'}
+          </button>
+        ))}
+      </div>
+      <div className="grid gap-1" style={{ gridTemplateColumns: `minmax(70px,1fr) repeat(${maxG}, 40px)` }}>
+        <div className="text-[10px] font-bold text-muted-foreground uppercase py-0.5">Player</div>
+        {Array.from({length: maxG}, (_, i) => <div key={i} className="text-[10px] text-center font-mono text-muted-foreground py-0.5 font-bold">G{i+1}</div>)}
+        <div className="text-xs font-semibold py-1 truncate self-center">{p1Name}</div>
+        {Array.from({length: maxG}, (_, i) => {
+          const gn = i + 1, s = games.find(g => g.game_number === gn), w = s ? s.score1 > s.score2 : false
+          return <input key={gn} type="number" min={0} max={99} value={local[gn]?.s1 ?? ''} onChange={e => setLocal(p => ({...p, [gn]: {...(p[gn] ?? {s1:'',s2:''}), s1: e.target.value}}))} disabled={saving}
+            className={cn('w-full text-center text-xs font-bold py-1 rounded border focus:outline-none focus:ring-1 focus:ring-orange-500/40 [appearance:textfield]', w && s ? 'border-emerald-400/50 bg-emerald-50/60 text-emerald-700' : 'border-border bg-background')} />
+        })}
+        <div className="text-xs font-semibold py-1 truncate self-center">{p2Name}</div>
+        {Array.from({length: maxG}, (_, i) => {
+          const gn = i + 1, s = games.find(g => g.game_number === gn), w = s ? s.score2 > s.score1 : false
+          return <input key={gn} type="number" min={0} max={99} value={local[gn]?.s2 ?? ''} onChange={e => setLocal(p => ({...p, [gn]: {...(p[gn] ?? {s1:'',s2:''}), s2: e.target.value}}))} disabled={saving}
+            className={cn('w-full text-center text-xs font-bold py-1 rounded border focus:outline-none focus:ring-1 focus:ring-orange-500/40 [appearance:textfield]', w && s ? 'border-emerald-400/50 bg-emerald-50/60 text-emerald-700' : 'border-border bg-background')} />
+        })}
+      </div>
+      <button onClick={handleSave} disabled={saving}
+        className="self-start px-3 py-1 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold transition-colors disabled:opacity-50 flex items-center gap-1">
+        {saving ? '…' : <Check className="h-3 w-3" />} {saving ? 'Saving' : 'Save'}
+      </button>
+    </div>
+  )
 }

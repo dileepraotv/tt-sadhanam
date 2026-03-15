@@ -77,6 +77,7 @@ interface Submatch {
     player1_games: number
     player2_games: number
     status:        string
+    match_format?: string | null
   } | null
 }
 
@@ -1081,7 +1082,9 @@ function FixtureDetailPanel({
   const teamA  = teams.find(t => t.id === match.team_a_id) ?? null
   const teamB  = teams.find(t => t.id === match.team_b_id) ?? null
   const isLocked = match.status === 'complete'
-  const format = (tournament.format ?? 'bo5') as MatchFormat
+  // Use the individual match's saved format if available, fall back to tournament default
+  const getMatchFormat = (sm: Submatch): MatchFormat =>
+    (sm.scoring?.match_format as MatchFormat | undefined) ?? (tournament.format as MatchFormat) ?? 'bo5'
 
   // Auto-save default player assignments on first render if not yet saved
   // This ensures scoring pages always show real names instead of TBD
@@ -1288,7 +1291,7 @@ function FixtureDetailPanel({
                       teamB={teamB}
                       isCorbillon={isCorbillon}
                       tournamentId={tournament.id}
-                      matchFormat={format}
+                      matchFormat={getMatchFormat(sm)}
                       onSaved={loadData}
                     />
                   </div>
@@ -1340,7 +1343,7 @@ function FixtureDetailPanel({
                     teamB={teamB}
                     isCorbillon={isCorbillon}
                     tournamentId={tournament.id}
-                    matchFormat={format}
+                    matchFormat={getMatchFormat(sm)}
                     onSaved={loadData}
                   />
                 </div>

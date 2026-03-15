@@ -128,7 +128,7 @@ export function PublicPureRRView({ tournament, matches: initialMatches, players 
       {/* Matchdays */}
       <div className="flex flex-col gap-2">
         <h2 className="text-sm font-bold text-muted-foreground uppercase tracking-wider px-1">Fixtures</h2>
-        {matchdays.map(({ round, matches: rMatches }) => {
+        {(matchdays as {round: number; matches: Match[]}[]).map(({ round, matches: rMatches }) => {
           const isOpen  = openRounds.has(round)
           const live    = rMatches.filter(m => m.status === 'live').length
           const done    = rMatches.filter(m => m.status === 'complete').length

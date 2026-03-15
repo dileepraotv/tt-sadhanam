@@ -87,14 +87,22 @@ export function RubberScorer({
   const loadGames = useCallback(async () => {
     if (!submatch.match_id) { setLoadingG(false); return }
     setLoadingG(true)
-    const { data } = await supabase
-      .from('games').select('*').eq('match_id', submatch.match_id).order('game_number')
+    // Also fetch the match's saved format from the matches table
+    const [gamesRes, matchRes] = await Promise.all([
+      supabase.from('games').select('*').eq('match_id', submatch.match_id).order('game_number'),
+      supabase.from('matches').select('match_format').eq('id', submatch.match_id).single(),
+    ])
+    const { data } = gamesRes
     const gs = data ?? []
     setGames(gs)
     const init: Record<number, GameLocal> = {}
     for (const g of gs) init[g.game_number] = { s1: String(g.score1 ?? ''), s2: String(g.score2 ?? '') }
     setLocal(init)
     setScoreErrors({})
+    // Restore the saved match format if available
+    if (matchRes?.data?.match_format) {
+      setActiveFormat(matchRes.data.match_format as MatchFormat)
+    }
     setLoadingG(false)
   }, [submatch.match_id])
 

@@ -209,7 +209,10 @@ export default async function AdminChampionshipPage({ params }: PageProps) {
 
                     <div className="flex items-center gap-3 text-xs text-muted-foreground">
                       <FormatTypeLabel t={ev.format_type} />
-                      <span>{formatFormatLabel(ev.format)}</span>
+                      {!['team_league','team_league_ko','team_league_swaythling',
+                          'team_group_corbillon','team_group_swaythling'].includes(ev.format_type ?? '') && (
+                        <span>{formatFormatLabel(ev.format)}</span>
+                      )}
                       {totalCount > 0 && (
                         <span className="flex items-center gap-1">
                           <Users className="h-3 w-3" /> {totalCount} matches

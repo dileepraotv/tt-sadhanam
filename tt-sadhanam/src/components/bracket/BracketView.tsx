@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { WinnerTrophy } from '@/components/shared/MatchUI'
 import { InlineLoader } from '@/components/shared/GlobalLoader'
 import { getRoundTab } from '@/lib/utils'
 import type { Match, Game } from '@/lib/types'
 import { MatchCard } from './MatchCard'
+import { Check, Trophy, AlertTriangle } from 'lucide-react'
 
 interface BracketViewProps {
   tournament:    { id: string; name: string }
@@ -27,6 +28,7 @@ export function BracketView({ tournament, matches, isAdmin, isPending, matchBase
   }, [matches])
 
   const [activeRound, setActiveRound] = useState<number | null>(null)
+  const [expandedMatchId, setExpandedMatchId] = useState<string | null>(null)
 
   if (!matches.length) {
     return (
@@ -395,11 +397,13 @@ function DrawPlayerRow({ player, games, isWinner, isLoser, showScore, matchIsBye
 }
 
 // ── Single-round list (tab view) ──────────────────────────────────────────────
-function RoundList({ round, isAdmin, matchBasePath, onMatchClick }: {
-  round:          RoundGroup
-  isAdmin?:       boolean
-  matchBasePath?: string
-  onMatchClick?:  (match: Match) => void
+function RoundList({ round, isAdmin, matchBasePath, onMatchClick, expandedMatchId, onToggleExpand }: {
+  round:           RoundGroup
+  isAdmin?:        boolean
+  matchBasePath?:  string
+  onMatchClick?:   (match: Match) => void
+  expandedMatchId?: string | null
+  onToggleExpand?:  (id: string) => void
 }) {
   if (!round) return null
 
@@ -408,7 +412,48 @@ function RoundList({ round, isAdmin, matchBasePath, onMatchClick }: {
   const completed = round.matches.filter(m => m.status === 'complete' || m.status === 'bye')
 
   const card = (m: Match) => {
-    const base = matchBasePath ?? `/admin/tournaments/${m.tournament_id}/match`
+    const base      = matchBasePath ?? `/admin/tournaments/${m.tournament_id}/match`
+    const isExpanded = expandedMatchId === m.id
+    const isBye     = m.status === 'bye'
+    const isComplete = m.status === 'complete'
+
+    // Admin: show inline scorer, no navigation
+    if (isAdmin && !isBye && !onMatchClick) {
+      return (
+        <div key={m.id} className="flex flex-col">
+          <div className="relative">
+            <MatchCard
+              match={m}
+              isAdmin={isAdmin}
+              // no href — scoring is inline
+            />
+            {/* Score / Edit button overlaid at bottom of card */}
+            <button
+              onClick={() => onToggleExpand?.(m.id)}
+              className={cn(
+                'absolute bottom-2 right-2 text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition-colors',
+                isComplete
+                  ? 'text-emerald-600 border-emerald-200 dark:border-emerald-800/40 bg-card hover:bg-emerald-50 dark:hover:bg-emerald-950/30'
+                  : 'text-orange-500 border-orange-200 dark:border-orange-800/40 bg-card hover:bg-orange-50 dark:hover:bg-orange-950/30',
+              )}
+            >
+              {isExpanded ? 'Close ↑' : isComplete ? 'Edit →' : 'Score →'}
+            </button>
+          </div>
+          {isExpanded && (
+            <div className="border border-t-0 border-border/50 rounded-b-xl px-3 pb-3 pt-2 bg-card">
+              <SingleMatchInlineScorer
+                matchId={m.id}
+                player1Name={m.player1?.name ?? 'Player 1'}
+                player2Name={m.player2?.name ?? 'Player 2'}
+                onSaved={() => onToggleExpand?.(m.id)}
+              />
+            </div>
+          )}
+        </div>
+      )
+    }
+
     return (
       <MatchCard
         key={m.id}
@@ -452,6 +497,187 @@ function RoundList({ round, isAdmin, matchBasePath, onMatchClick }: {
         </section>
       )}
 
+    </div>
+  )
+}
+
+
+// ── SingleMatchInlineScorer ────────────────────────────────────────────────────
+// Inline game-score entry for singles knockout matches.
+// Same logic as team RubberScorer — format selector, per-game score grid, save.
+
+function SingleMatchInlineScorer({ matchId, player1Name, player2Name, onSaved }: {
+  matchId:     string
+  player1Name: string
+  player2Name: string
+  onSaved?:    () => void
+}) {
+  const [games,   setGames]   = useState<{id:string;game_number:number;score1:number;score2:number;winner_id:string|null}[]>([])
+  const [local,   setLocal]   = useState<Record<number,{s1:string;s2:string}>>({})
+  const [saving,  setSaving]  = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [format,  setFormat]  = useState<'bo3'|'bo5'|'bo7'>('bo5')
+  const [p1Id,    setP1Id]    = useState<string|null>(null)
+  const [p2Id,    setP2Id]    = useState<string|null>(null)
+  const sbRef = useRef<ReturnType<typeof import('@/lib/supabase/client').createClient> | null>(null)
+
+  const getSb = useCallback(async () => {
+    if (!sbRef.current) {
+      const { createClient } = await import('@/lib/supabase/client')
+      sbRef.current = createClient()
+    }
+    return sbRef.current!
+  }, [])
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const sb = await getSb()
+    const [gRes, mRes] = await Promise.all([
+      sb.from('games').select('*').eq('match_id', matchId).order('game_number'),
+      sb.from('matches').select('match_format, player1_id, player2_id').eq('id', matchId).single(),
+    ])
+    const gs = gRes.data ?? []
+    setGames(gs)
+    const init: Record<number,{s1:string;s2:string}> = {}
+    for (const g of gs) init[g.game_number] = { s1: String(g.score1 ?? ''), s2: String(g.score2 ?? '') }
+    setLocal(init)
+    if (mRes.data?.match_format) setFormat(mRes.data.match_format as 'bo3'|'bo5'|'bo7')
+    if (mRes.data?.player1_id)   setP1Id(mRes.data.player1_id)
+    if (mRes.data?.player2_id)   setP2Id(mRes.data.player2_id)
+    setLoading(false)
+  }, [matchId, getSb])
+
+  useEffect(() => { load() }, [load])
+
+  const maxG = format === 'bo3' ? 3 : format === 'bo7' ? 7 : 5
+
+  const handleFormatChange = async (f: 'bo3'|'bo5'|'bo7') => {
+    setFormat(f)
+    const { updateMatchFormat } = await import('@/lib/actions/matches')
+    await updateMatchFormat(matchId, f)
+  }
+
+  const handleSave = async () => {
+    setSaving(true)
+    const entries = Array.from({length:maxG},(_,i)=>i+1)
+      .map(gn => ({gn, sc: local[gn]}))
+      .filter(({sc}) => sc && !(sc.s1==='' && sc.s2===''))
+    if (!entries.length) { setSaving(false); return }
+    // Reset if already had scores
+    if (games.length > 0) {
+      const { deleteGameScore } = await import('@/lib/actions/matches')
+      const sb = await getSb()
+      for (const g of games) await deleteGameScore(matchId, g.game_number)
+      await sb.from('matches').update({status:'pending',winner_id:null,player1_games:0,player2_games:0,completed_at:null}).eq('id',matchId)
+    }
+    const { saveGameScore } = await import('@/lib/actions/matches')
+    for (const {gn, sc} of entries) {
+      const s1 = parseInt(sc!.s1, 10), s2 = parseInt(sc!.s2, 10)
+      if (isNaN(s1) || isNaN(s2)) continue
+      const res = await saveGameScore(matchId, gn, s1, s2)
+      if (!res.success) {
+        if (res.error?.includes('Cannot add') || res.error?.includes('already complete')) break
+        break
+      }
+    }
+    setSaving(false)
+    await load()
+    onSaved?.()
+  }
+
+  if (loading) return <div className="text-xs text-muted-foreground py-2">Loading…</div>
+
+  return (
+    <div className="flex flex-col gap-2">
+      {/* Format selector */}
+      <div className="flex items-center gap-1 pt-1">
+        {(['bo3','bo5','bo7'] as const).map(f => (
+          <button key={f} onClick={() => handleFormatChange(f)}
+            className={cn(
+              'px-2.5 py-0.5 rounded-full text-[11px] font-bold transition-colors',
+              format === f ? 'bg-orange-500 text-white' : 'text-muted-foreground hover:text-foreground',
+            )}>
+            {f === 'bo3' ? 'Best of 3' : f === 'bo5' ? 'Best of 5' : 'Best of 7'}
+          </button>
+        ))}
+      </div>
+
+      {/* Score grid — same layout used across all inline scorers */}
+      <div className="grid gap-1" style={{gridTemplateColumns: `minmax(80px,1fr) repeat(${maxG}, 44px)`}}>
+        <div className="text-[10px] font-bold text-muted-foreground uppercase py-1">Player</div>
+        {Array.from({length: maxG}, (_, i) => (
+          <div key={i} className="text-[10px] text-center font-mono text-muted-foreground py-1 font-bold">G{i+1}</div>
+        ))}
+        {/* P1 */}
+        <div className="text-xs font-semibold py-1 truncate self-center">{player1Name}</div>
+        {Array.from({length: maxG}, (_, i) => {
+          const gn = i + 1
+          const stored = games.find(g => g.game_number === gn)
+          const won = stored ? stored.score1 > stored.score2 : false
+          return (
+            <input key={gn} type="number" min={0} max={99}
+              value={local[gn]?.s1 ?? ''}
+              onChange={e => setLocal(p => ({...p, [gn]: {...(p[gn] ?? {s1:'',s2:''}), s1: e.target.value}}))}
+              disabled={saving}
+              className={cn(
+                'w-full text-center text-sm font-bold py-1.5 rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500/40 [appearance:textfield]',
+                won && stored ? 'border-emerald-400/50 bg-emerald-50/60 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300' : 'border-border bg-background',
+                saving && 'opacity-40',
+              )}
+            />
+          )
+        })}
+        {/* P2 */}
+        <div className="text-xs font-semibold py-1 truncate self-center">{player2Name}</div>
+        {Array.from({length: maxG}, (_, i) => {
+          const gn = i + 1
+          const stored = games.find(g => g.game_number === gn)
+          const won = stored ? stored.score2 > stored.score1 : false
+          return (
+            <input key={gn} type="number" min={0} max={99}
+              value={local[gn]?.s2 ?? ''}
+              onChange={e => setLocal(p => ({...p, [gn]: {...(p[gn] ?? {s1:'',s2:''}), s2: e.target.value}}))}
+              disabled={saving}
+              className={cn(
+                'w-full text-center text-sm font-bold py-1.5 rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500/40 [appearance:textfield]',
+                won && stored ? 'border-emerald-400/50 bg-emerald-50/60 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300' : 'border-border bg-background',
+                saving && 'opacity-40',
+              )}
+            />
+          )
+        })}
+      </div>
+
+      {/* Save */}
+      <div className="flex items-center gap-2 pt-1">
+        <button onClick={handleSave} disabled={saving}
+          className="px-4 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold transition-colors disabled:opacity-50 flex items-center gap-1.5">
+          {saving ? <span className="tt-spinner tt-spinner-sm" /> : <Check className="h-3 w-3" />}
+          {saving ? 'Saving…' : 'Save Scores'}
+        </button>
+        <button onClick={async () => {
+          setSaving(true)
+          const { declareMatchWinner } = await import('@/lib/actions/matches')
+          await declareMatchWinner(matchId, p1Id ?? 'p1', 'declared')
+          setSaving(false)
+          await load()
+          onSaved?.()
+        }} disabled={saving || !p1Id}
+          className="px-3 py-1.5 rounded-lg border border-border text-xs font-semibold text-muted-foreground hover:border-amber-400 hover:text-foreground transition-colors disabled:opacity-30 flex items-center gap-1">
+          <Trophy className="h-3 w-3 text-amber-500" /> {player1Name} wins
+        </button>
+        <button onClick={async () => {
+          setSaving(true)
+          const { declareMatchWinner } = await import('@/lib/actions/matches')
+          await declareMatchWinner(matchId, p2Id ?? 'p2', 'declared')
+          setSaving(false)
+          await load()
+          onSaved?.()
+        }} disabled={saving || !p2Id}
+          className="px-3 py-1.5 rounded-lg border border-border text-xs font-semibold text-muted-foreground hover:border-amber-400 hover:text-foreground transition-colors disabled:opacity-30 flex items-center gap-1">
+          <Trophy className="h-3 w-3 text-amber-500" /> {player2Name} wins
+        </button>
+      </div>
     </div>
   )
 }

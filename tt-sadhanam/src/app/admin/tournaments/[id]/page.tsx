@@ -217,9 +217,11 @@ export default async function AdminTournamentPage({ params, searchParams }: Page
                       {tournament.location}
                     </span>
                   )}
-                  <span className="font-medium text-foreground">
-                    {formatFormatLabel(tournament.format)}
-                  </span>
+                  {!isTeamFormat && (
+                    <span className="font-medium text-foreground">
+                      {formatFormatLabel(tournament.format)}
+                    </span>
+                  )}
                   <FormatTypeBadge formatType={formatType} />
                 </div>
               </div>
@@ -296,15 +298,18 @@ export default async function AdminTournamentPage({ params, searchParams }: Page
  * The TournamentTypeSelector lives in the header (always visible).
  */
 function SetupTab({ tournament, players }: { tournament: Tournament; players: Player[] }) {
-  const ft   = tournament.format_type ?? 'single_knockout'
-  const isKO = ft === 'single_knockout'
+  const ft         = tournament.format_type ?? 'single_knockout'
+  const isKO       = ft === 'single_knockout'
+  const isTeamFmt  = ['team_league', 'team_league_ko', 'team_league_swaythling',
+                       'team_group_corbillon', 'team_group_swaythling'].includes(ft)
 
   return (
     <div className="flex flex-col gap-5">
       {/* Stats grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <InfoTile label="Match Format"  value={formatFormatLabel(tournament.format)} />
-        <InfoTile label="Players"       value={String(players.length)} />
+        {!isTeamFmt && <InfoTile label="Match Format" value={formatFormatLabel(tournament.format)} />}
+        {isTeamFmt  && <InfoTile label="Format"       value={ft.replace(/_/g, ' ').replace(/\w/g, c => c.toUpperCase())} />}
+        <InfoTile label={isTeamFmt ? 'Teams' : 'Players'} value={isTeamFmt ? '—' : String(players.length)} />
         <InfoTile
           label="Status"
           value={tournament.status.charAt(0).toUpperCase() + tournament.status.slice(1)}
