@@ -117,8 +117,9 @@ export default async function AdminTournamentPage({ params, searchParams }: Page
   const user = await getUser()
   if (!user) redirect('/')
 
-  const data = await getData(params.id, user.id)
-  if (!data) redirect('/')
+  const rawData = await getData(params.id, user.id)
+  if (!rawData) redirect('/')
+  const data = rawData!
 
   const {
     tournament, players, matches,

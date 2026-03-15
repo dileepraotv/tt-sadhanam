@@ -1,5 +1,23 @@
 'use client'
 
+/**
+ * MatchCard — unified match display for ALL event types.
+ *
+ * Layout (two-line, always):
+ *
+ *   ┌─────────────────────────────────────────────────┐
+ *   │ Round name                          LIVE / Done │
+ *   │ [🏆] [Seed] Player 1 name ·····    3  11 11  9 │  ← sets won + per-game scores
+ *   │ ─────────────────────────────────────────────── │
+ *   │      [Seed] Player 2 name ·····    1   9  8 11 │
+ *   │ 11–9  8–11  11–8  ← game chips (complete only) │
+ *   └─────────────────────────────────────────────────┘
+ *
+ * Completed matches: greyed (opacity-60), game scores always visible.
+ * Live matches: orange accent border + live pulse bar.
+ * Pending: normal card, "Enter score" CTA if admin.
+ */
+
 import { cn } from '@/lib/utils'
 import type { Match, Game } from '@/lib/types'
 import { LiveBadge } from '@/components/shared/LiveBadge'
@@ -28,41 +46,39 @@ export function MatchCard({ match, compact = false, onClick, isAdmin, href }: Ma
     : []
 
   const Wrapper = href ? 'a' : onClick ? 'button' : 'div'
-  const canScore = isAdmin && !isBye && !isComplete
 
   return (
     <Wrapper
       href={href}
       onClick={onClick}
       className={cn(
-        'match-card w-full text-left block',
-        (isComplete || isBye) && 'complete',
-        isLive && 'live',
-        (onClick || href) && 'cursor-pointer',
+        'match-card w-full text-left block rounded-xl border overflow-hidden transition-all',
+        isLive     ? 'border-orange-400/70 bg-orange-50/30 dark:bg-orange-950/10 shadow-sm' :
+        isComplete ? 'border-border/30 bg-muted/10 opacity-60' :
+        isBye      ? 'border-border/20 bg-muted/5 opacity-50' :
+                     'border-border bg-card',
+        (onClick || href) && 'cursor-pointer hover:border-orange-400/50 hover:shadow-sm',
       )}
     >
-      {/* Match header — round name + match# + status badge */}
+      {/* Header row: round label + status */}
       {!compact && (
-        <div className="flex items-center justify-between px-3 pt-2 pb-1 gap-2">
-          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-widest truncate min-w-0">
+        <div className="flex items-center justify-between px-3 pt-2.5 pb-1 gap-2">
+          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider truncate min-w-0">
             {match.round_name ?? `Round ${match.round}`}
-            {match.match_number && (
-              <span className="ml-1.5 text-[9px] text-muted-foreground/50 font-mono">M{match.match_number}</span>
-            )}
           </span>
           <div className="flex items-center gap-1.5 shrink-0">
-            {isLive && <LiveBadge />}
-            {isBye && <span className="text-xs text-muted-foreground bg-muted rounded px-1.5 py-0.5">BYE</span>}
-            {isComplete && <span className="text-xs text-muted-foreground uppercase tracking-widest">Done</span>}
+            {isLive     && <LiveBadge />}
+            {isBye      && <span className="text-[10px] text-muted-foreground bg-muted rounded px-1.5 py-0.5 font-semibold uppercase">BYE</span>}
+            {isComplete && <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">✓ Done</span>}
           </div>
         </div>
       )}
 
-      {/* Player rows */}
-      <div className={cn('px-3', compact ? 'py-1' : 'pb-2')}>
+      {/* Two-line player rows */}
+      <div className={cn('px-3', compact ? 'pt-1.5 pb-1' : 'pb-2.5')}>
         <PlayerRow
           player={player1}
-          games={player1_games}
+          gamesWon={player1_games}
           isWinner={p1IsWinner}
           isLoser={p2IsWinner}
           showScore={isLive || isComplete}
@@ -71,10 +87,16 @@ export function MatchCard({ match, compact = false, onClick, isAdmin, href }: Ma
           playerSlot={1}
           playerId={match.player1_id}
         />
-        <div className="border-b border-border/50 my-0.5" />
+
+        {/* Divider */}
+        <div className={cn(
+          'border-b my-0.5',
+          isComplete ? 'border-border/20' : 'border-border/40',
+        )} />
+
         <PlayerRow
           player={player2}
-          games={player2_games}
+          gamesWon={player2_games}
           isWinner={p2IsWinner}
           isLoser={p1IsWinner}
           showScore={isLive || isComplete}
@@ -85,17 +107,17 @@ export function MatchCard({ match, compact = false, onClick, isAdmin, href }: Ma
         />
       </div>
 
-      {/* Game score strip — always below both rows to avoid overlap */}
+      {/* Game score chips — always shown for complete/live, no need to edit to see */}
       {sortedGames.length > 0 && (isLive || isComplete) && !compact && (
-        <div className="px-3 pb-2 flex items-center gap-1 flex-wrap">
+        <div className="px-3 pb-2.5 flex items-center gap-1 flex-wrap">
           {sortedGames.map((g, i) => {
             const p1Won = g.winner_id === match.player1_id
             return (
               <span key={g.id ?? i} className={cn(
-                'game-score-chip text-xs',
+                'text-[11px] font-mono tabular-nums px-1.5 py-0.5 rounded-md border',
                 p1Won
-                  ? 'text-orange-600 dark:text-orange-400 bg-orange-100 dark:bg-orange-900/40 border border-orange-300 dark:border-orange-700/60'
-                  : 'text-muted-foreground bg-muted dark:bg-muted/60 border border-border/50',
+                  ? 'text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/30 border-orange-200 dark:border-orange-800/40'
+                  : 'text-muted-foreground bg-muted/60 border-border/40',
               )}>
                 {g.score1}–{g.score2}
               </span>
@@ -104,42 +126,35 @@ export function MatchCard({ match, compact = false, onClick, isAdmin, href }: Ma
         </div>
       )}
 
-      {/* Live progress bar */}
+      {/* Live pulse bar */}
       {isLive && (
-        <div className="h-1 rounded-b-lg"
-          style={{ background: 'linear-gradient(90deg, #F06321 0%, #F5853F 50%, #F06321 100%)',
-                   animation: 'animate-pulse-slow 2s ease-in-out infinite' }} />
+        <div className="h-0.5 bg-gradient-to-r from-orange-400/0 via-orange-500 to-orange-400/0 animate-pulse" />
       )}
 
-      {/* Admin score-entry strip — only for pending/live matches */}
-      {canScore && (href || onClick) && (
-        <div className="flex items-center justify-between px-3 py-1.5 border-t border-border/40 bg-muted/30">
-          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">
+      {/* Admin: score CTA for pending/live when using href/click nav */}
+      {isAdmin && !isBye && !isComplete && (href || onClick) && (
+        <div className="flex items-center justify-between px-3 py-1.5 border-t border-border/30 bg-muted/20">
+          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
             {isLive ? 'Update score' : 'Enter score'}
           </span>
-          <span className="flex items-center gap-1 text-[11px] font-bold" style={{ color: '#F06321' }}>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-            </svg>
-            Tap
-          </span>
+          <span className="text-[11px] font-bold text-orange-500">→</span>
         </div>
       )}
     </Wrapper>
   )
 }
 
-// ── PlayerRow ──────────────────────────────────────────────────────────────────
-// Mobile-first layout:
-//   [🏆] [Seed] Name (truncate)  |  Score
-// Score never overlaps name — it's absolutely fixed-width on the right.
+// ── PlayerRow ─────────────────────────────────────────────────────────────────
+// Two-column layout:
+//   LEFT:  [🏆] [seed] Name (truncates)
+//   RIGHT: per-game individual scores + sets won (fixed width)
+
 function PlayerRow({
-  player, games, isWinner, isLoser, showScore, compact,
+  player, gamesWon, isWinner, isLoser, showScore, compact,
   sortedGames, playerSlot, playerId,
 }: {
   player?:     Match['player1'] | null
-  games:       number
+  gamesWon:    number
   isWinner:    boolean
   isLoser:     boolean
   showScore:   boolean
@@ -148,60 +163,52 @@ function PlayerRow({
   playerSlot:  1 | 2
   playerId:    string | null
 }) {
-  const name    = player?.name ?? (compact ? 'TBD' : 'TBD')
+  const name    = player?.name ?? 'TBD'
   const isEmpty = !player?.name
 
   return (
-    <div className={cn(
-      'flex items-center gap-2',
-      compact ? 'py-1' : 'py-1.5',
-    )}>
-      {/* Left: trophy (fixed) + seed (fixed) + name (flex-1, truncates) */}
+    <div className={cn('flex items-center gap-2', compact ? 'py-1' : 'py-1.5')}>
+      {/* Left: trophy + seed + name */}
       <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
-
-        {/* Trophy — always occupies fixed width so names align between rows */}
         <WinnerTrophy show={isWinner} size="md" />
-
-        {/* Seed badge */}
-        {player?.seed && (
-          <span className="seed-badge shrink-0">{player.seed}</span>
-        )}
-
-        {/* Name — truncates before touching score */}
+        {player?.seed && <span className="seed-badge shrink-0">{player.seed}</span>}
         <span className={cn(
           'truncate leading-tight',
           compact ? 'text-sm' : 'text-[15px]',
-          isEmpty      ? 'text-muted-foreground/60 italic text-sm' : '',
-          isWinner     ? 'font-bold text-foreground' : '',
-          isLoser      ? 'font-normal text-muted-foreground' : 'text-foreground font-semibold',
+          isEmpty  ? 'text-muted-foreground/50 italic text-sm' : '',
+          isWinner ? 'font-bold text-foreground' : '',
+          isLoser  ? 'font-normal text-muted-foreground' : (!isWinner ? 'font-semibold text-foreground' : ''),
         )}>
           {name}
         </span>
       </div>
 
-      {/* Right: per-game points (compact only) + set count — fixed width, never wraps */}
+      {/* Right: per-game scores (shown for complete/live) + sets won */}
       <div className="flex items-center gap-1 shrink-0">
-        {compact && sortedGames.length > 0 && sortedGames.map((g, i) => {
+        {showScore && sortedGames.length > 0 && sortedGames.map((g, i) => {
           const score = playerSlot === 1 ? g.score1 : g.score2
           const won   = g.winner_id === playerId
-          if (score === null) return null
+          if (score === null || score === undefined) return null
           return (
             <span key={g.id ?? i} className={cn(
-              'text-xs font-mono tabular-nums px-1 rounded',
-              won ? 'font-semibold text-orange-600 dark:text-orange-400' : 'text-muted-foreground',
+              'text-xs font-mono tabular-nums w-6 text-center rounded',
+              won
+                ? 'font-bold text-orange-600 dark:text-orange-400'
+                : 'text-muted-foreground/60',
             )}>
               {score}
             </span>
           )
         })}
-
         {showScore && (
           <span className={cn(
-            'font-bold tabular-nums min-w-[1.25rem] text-right',
+            'font-bold tabular-nums w-5 text-right',
             compact ? 'text-sm' : 'text-base',
-            isWinner ? 'text-orange-600 dark:text-orange-400' : isLoser ? 'text-muted-foreground' : 'text-muted-foreground/60',
+            isWinner ? 'text-emerald-600 dark:text-emerald-400' :
+            isLoser  ? 'text-muted-foreground/50' :
+                       'text-muted-foreground/60',
           )}>
-            {games}
+            {gamesWon}
           </span>
         )}
       </div>

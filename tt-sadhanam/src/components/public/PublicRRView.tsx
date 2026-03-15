@@ -135,7 +135,7 @@ export function PublicRRView({
             <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
               Fixtures
             </p>
-            {matchdays.map(({ round, matches }) => (
+            {(matchdays as {round: number; matches: Match[]}[]).map(({ round, matches }) => (
               <MatchdayAccordion
                 key={round}
                 round={round}

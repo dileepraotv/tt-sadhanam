@@ -466,8 +466,8 @@ export async function updateMatchFormat(
     .eq('id', matchId)
     .single()
   if (!match) return { success: false, error: 'Match not found' }
-  if (match.status === 'complete')
-    return { success: false, error: 'Cannot change format of a completed match.' }
+  // Allow format changes even on completed matches — format is display metadata
+  // The edit flow needs to change format BEFORE resetting scores
 
   const { error } = await supabase
     .from('matches')

@@ -223,7 +223,7 @@ export function NewEventForm({ cid, createAction }: Props) {
     }
   }
 
-  const activeTheme = THEMES[formatType]
+  const activeTheme = THEMES[formatType as keyof typeof THEMES] ?? THEMES.single_knockout
 
   return (
     <form ref={formRef} onSubmit={handleSubmit} className="flex flex-col gap-6">

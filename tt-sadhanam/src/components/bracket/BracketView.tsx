@@ -129,6 +129,8 @@ export function BracketView({ tournament, matches, isAdmin, isPending, matchBase
           isAdmin={isAdmin}
           matchBasePath={matchBasePath}
           onMatchClick={onMatchClick}
+          expandedMatchId={expandedMatchId}
+          onToggleExpand={(id) => setExpandedMatchId(prev => prev === id ? null : id)}
         />
       )}
     </div>
@@ -407,6 +409,11 @@ function RoundList({ round, isAdmin, matchBasePath, onMatchClick, expandedMatchI
 }) {
   if (!round) return null
 
+  // Sort: live first, then pending, then completed (greyed at bottom)
+  const sortedMatches = [...round.matches].sort((a, b) => {
+    const order = (s: string) => s === 'live' ? 0 : s === 'pending' ? 1 : 2
+    return order(a.status) - order(b.status)
+  })
   const live      = round.matches.filter(m => m.status === 'live')
   const pending   = round.matches.filter(m => m.status === 'pending')
   const completed = round.matches.filter(m => m.status === 'complete' || m.status === 'bye')
@@ -467,36 +474,16 @@ function RoundList({ round, isAdmin, matchBasePath, onMatchClick, expandedMatchI
 
   return (
     <div className="flex flex-col gap-3 animate-fade-in">
-
       {live.length > 0 && (
-        <section className="flex flex-col gap-2">
-          <p className="text-sm font-bold uppercase tracking-widest flex items-center gap-2 text-orange-600 dark:text-orange-400">
-            <span className="live-dot" /> On Court
-          </p>
-          {live.map(card)}
-        </section>
+        <div className="flex items-center gap-1.5 mb-0.5">
+          <span className="live-dot" />
+          <span className="text-xs font-bold uppercase tracking-widest text-orange-500">
+            {live.length} on court
+          </span>
+        </div>
       )}
-
-      {pending.length > 0 && (
-        <section className="flex flex-col gap-2">
-          {live.length > 0 && (
-            <p className="text-xs font-bold tracking-widest uppercase mt-2 text-muted-foreground">
-              Upcoming
-            </p>
-          )}
-          {pending.map(card)}
-        </section>
-      )}
-
-      {completed.length > 0 && (
-        <section className="flex flex-col gap-2 mt-1">
-          <p className="text-xs font-bold tracking-widest uppercase text-muted-foreground">
-            Completed
-          </p>
-          {completed.map(card)}
-        </section>
-      )}
-
+      {/* Sorted: live → pending → completed (greyed + pushed to bottom) */}
+      {sortedMatches.map(m => card(m))}
     </div>
   )
 }

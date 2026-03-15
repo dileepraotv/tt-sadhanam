@@ -106,10 +106,10 @@ export default async function AdminChampionshipPage({ params }: PageProps) {
   const user = await getUser()
   if (!user) redirect('/')
 
-  const data = await getData(params.cid, user.id)
-  if (!data) notFound()
+  const rawData = await getData(params.cid, user.id)
+  if (!rawData) notFound()
 
-  const { championship, events } = data
+  const { championship, events } = rawData!
 
   const totalLive = events.reduce((n, e) => n + e._live, 0)
 

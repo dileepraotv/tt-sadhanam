@@ -205,8 +205,9 @@ export default async function AdminEventPage({ params, searchParams }: PageProps
   const user = await getUser()
   if (!user) redirect('/')
 
-  const data = await getData(params.cid, params.eid, user.id)
-  if (!data) notFound()
+  const rawData = await getData(params.cid, params.eid, user.id)
+  if (!rawData) notFound()
+  const data = rawData!
 
   const { champ, tournament, players, matches, rrStage, rrStandings, hasScores, allComplete } = data
 

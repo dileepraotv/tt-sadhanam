@@ -302,32 +302,24 @@ function useTeamGroupData(tournamentId: string) {
 
   // ── Load stage + groups ───────────────────────────────────────────────────
   const loadGroups = useCallback(async (gen: number): Promise<boolean> => {
+    // Single joined query: stages + groups + members in one round-trip
     const { data: rawStage } = await sb
-      .from('stages').select('id, config')
+      .from('stages')
+      .select('id, config, rr_groups(id, group_number, name, members:team_rr_group_members(team_id))')
       .eq('tournament_id', tournamentId).eq('stage_number', 1).maybeSingle()
     if (gen !== genRef.current) return false
 
     let groupList: RRGroup[] = []
     if (rawStage) {
-      const { data: rawGroups } = await sb
-        .from('rr_groups').select('id, group_number, name')
-        .eq('stage_id', rawStage.id).order('group_number')
-      if (gen !== genRef.current) return false
-
-      const gIds = (rawGroups ?? []).map((g: any) => g.id as string)
-      const { data: rawMembers } = gIds.length > 0
-        ? await sb.from('team_rr_group_members').select('group_id, team_id').in('group_id', gIds)
-        : { data: [] }
-      if (gen !== genRef.current) return false
-
-      const mMap = new Map<string, string[]>()
-      for (const r of (rawMembers ?? []) as any[]) {
-        const arr = mMap.get(r.group_id) ?? []; arr.push(r.team_id); mMap.set(r.group_id, arr)
-      }
-      groupList = (rawGroups ?? []).map((g: any) => ({
-        id: g.id, group_number: g.group_number, name: g.name,
-        teamIds: mMap.get(g.id) ?? [],
-      }))
+      const rawGroups = (rawStage as any).rr_groups ?? []
+      groupList = [...rawGroups]
+        .sort((a: any, b: any) => a.group_number - b.group_number)
+        .map((g: any) => ({
+          id: g.id,
+          group_number: g.group_number,
+          name: g.name,
+          teamIds: ((g.members ?? []) as any[]).map((m: any) => m.team_id as string),
+        }))
     }
 
     setStage(rawStage as StageRow | null)
@@ -345,8 +337,8 @@ function useTeamGroupData(tournamentId: string) {
       await loadTeams()
       if (gen !== genRef.current) return
     }
-    await loadMatches(gen)
-    await loadGroups(gen)
+    // loadMatches and loadGroups are independent — run in parallel
+    await Promise.all([loadMatches(gen), loadGroups(gen)])
     if (gen === genRef.current) setLoading(false)
   }, [loadTeams, loadMatches, loadGroups])
 
@@ -1599,7 +1591,10 @@ function GroupsTab({
           {/* Groups */}
           {groups.map(group => {
             const groupTeams   = group.teamIds.map(id => teams.find(t => t.id === id)).filter(Boolean) as TeamWithPlayers[]
-            const groupMatches = rrMatches.filter(m => m.group_id === group.id)
+            const groupMatches = [...rrMatches.filter(m => m.group_id === group.id)].sort((a, b) => {
+              const o = (s: string) => s === 'live' ? 0 : s === 'pending' ? 1 : 2
+              return o(a.status) - o(b.status)
+            })
             const standings    = computeStandings(group.id, group.teamIds, teamMatches)
             const isExpanded   = expandedGroup === group.id
             const allDone      = groupMatches.length > 0 && groupMatches.every(m => m.status === 'complete')
@@ -1693,29 +1688,49 @@ function GroupsTab({
                             const doneCount  = m.submatches.filter(s => s.scoring?.status === 'complete').length
 
                             return (
-                              <Card key={m.id} className={cn('overflow-hidden', matchStatusClasses(m.status))}>
+                              <Card key={m.id} className={cn(
+                                'overflow-hidden transition-all',
+                                m.status === 'complete' ? 'opacity-60 border-border/20' :
+                                m.status === 'live'     ? 'border-orange-400/70 shadow-sm shadow-orange-100/40 dark:shadow-orange-900/10' :
+                                ''
+                              )}>
                                 <CardContent className="pt-3 pb-3">
-                                  {/* Fixture header (clickable) */}
-                                  <button className="w-full flex items-center gap-2 text-left"
-                                    onClick={() => setExpandedMatch(isExpM ? null : m.id)}>
-                                    <div className="flex-1 min-w-0 flex items-center gap-2 text-sm">
-                                      <div className="flex items-center gap-1.5 min-w-0">
-                                        <WinnerTrophy show={isComplete && m.winner_team_id === m.team_a_id} />
-                                        <span className={cn('text-sm truncate font-semibold', isComplete && m.winner_team_id === m.team_a_id ? 'text-emerald-600 dark:text-emerald-400 font-bold' : isComplete && m.winner_team_id !== m.team_a_id ? 'text-muted-foreground font-normal' : 'text-foreground')}>
-                                          {m.team_a_name}
+                                  {/* Fixture header — two-line: Team A row, Team B row */}
+                                  <button className="w-full text-left" onClick={() => setExpandedMatch(isExpM ? null : m.id)}>
+                                    {/* Team A row */}
+                                    <div className="flex items-center gap-2 py-1">
+                                      <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                                        {isComplete && m.winner_team_id === m.team_a_id
+                                          ? <span className="text-amber-500 text-sm shrink-0">🏆</span>
+                                          : <span className="w-4 shrink-0" />}
+                                        <span className={cn('text-sm truncate', isComplete && m.winner_team_id === m.team_a_id ? 'font-bold text-emerald-600 dark:text-emerald-400' : isComplete ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground')}>
+                                          {m.team_a_name ?? <span className="italic text-muted-foreground/50">TBD</span>}
                                         </span>
                                       </div>
-                                      <span className="font-mono font-bold text-sm shrink-0">{m.team_a_score}–{m.team_b_score}</span>
-                                      <div className="flex items-center gap-1.5 min-w-0">
-                                        <WinnerTrophy show={isComplete && m.winner_team_id === m.team_b_id} />
-                                        <span className={cn('font-medium truncate', isComplete && m.winner_team_id !== m.team_b_id && 'text-muted-foreground')}>
-                                          {m.team_b_name}
-                                        </span>
+                                      <span className={cn('font-mono font-bold text-sm shrink-0 w-6 text-right', isComplete && m.winner_team_id === m.team_a_id ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/60')}>
+                                        {m.team_a_score}
+                                      </span>
+                                      <div className="flex items-center gap-1.5 shrink-0">
+                                        <span className="text-xs text-muted-foreground">{doneCount}/{m.submatches.length}</span>
+                                        <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform', isExpM && 'rotate-180')} />
                                       </div>
                                     </div>
-                                    <div className="flex items-center gap-2 shrink-0">
-                                      <span className="text-xs text-muted-foreground">{doneCount}/{m.submatches.length}</span>
-                                      <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform', isExpM && 'rotate-180')} />
+                                    {/* Divider */}
+                                    <div className="border-b border-border/30 ml-6 mr-16" />
+                                    {/* Team B row */}
+                                    <div className="flex items-center gap-2 py-1">
+                                      <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                                        {isComplete && m.winner_team_id === m.team_b_id
+                                          ? <span className="text-amber-500 text-sm shrink-0">🏆</span>
+                                          : <span className="w-4 shrink-0" />}
+                                        <span className={cn('text-sm truncate', isComplete && m.winner_team_id === m.team_b_id ? 'font-bold text-emerald-600 dark:text-emerald-400' : isComplete ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground')}>
+                                          {m.team_b_name ?? <span className="italic text-muted-foreground/50">TBD</span>}
+                                        </span>
+                                      </div>
+                                      <span className={cn('font-mono font-bold text-sm shrink-0 w-6 text-right', isComplete && m.winner_team_id === m.team_b_id ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/60')}>
+                                        {m.team_b_score}
+                                      </span>
+                                      <span className="w-16 shrink-0" />{/* spacer to align with action above */}
                                     </div>
                                   </button>
 

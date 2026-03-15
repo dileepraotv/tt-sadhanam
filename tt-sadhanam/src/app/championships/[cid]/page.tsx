@@ -78,10 +78,9 @@ async function getData(cid: string): Promise<{ championship: Championship; allEv
 }
 
 export default async function PublicChampionshipPage({ params }: PageProps) {
-  const data = await getData(params.cid)
-  if (!data) notFound()
-
-  const { championship, allEvents } = data
+  const rawData = await getData(params.cid)
+  if (!rawData) notFound()
+  const { championship, allEvents } = rawData!
   const totalLive = allEvents.reduce((n, e) => n + e._live, 0)
 
   const dateStr = championship.start_date

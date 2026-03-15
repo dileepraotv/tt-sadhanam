@@ -1600,7 +1600,7 @@ function TeamMatchBracketCard({
   return (
     <div className={cn(
       'rounded-2xl border overflow-hidden transition-all duration-150',
-      isDone  && 'bg-muted/10 border-border/40',
+      isDone  && 'opacity-60 bg-muted/10 border-border/20',
       isLive  && !isDone && 'bg-card border-orange-400 dark:border-orange-500 shadow-md shadow-orange-100 dark:shadow-orange-950/30',
       !isLive && !isDone && 'bg-card border-border',
       isHighlighted && 'ring-2 ring-orange-400/50',
@@ -2002,30 +2002,40 @@ function TeamMatchAdminCard({
           ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
           : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
         }
-        <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
-          <span className="flex items-center gap-1.5">
+        <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+          {/* Team A row */}
+          <div className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full shrink-0" style={{ background: teamA?.color ?? '#F06321' }} />
-            <span className={cn('font-semibold text-sm',
-              aWon && 'text-emerald-600 dark:text-emerald-400 font-bold',
-              bWon && 'text-muted-foreground font-normal',
+            {aWon && <span className="text-amber-400 text-xs">🏆</span>}
+            <span className={cn('font-semibold text-sm truncate flex-1 min-w-0',
+              aWon ? 'text-emerald-600 dark:text-emerald-400 font-bold' :
+              bWon ? 'text-muted-foreground font-normal' : 'text-foreground',
             )}>
               {teamA?.short_name ?? teamA?.name ?? '—'}
             </span>
-          </span>
-          <span className={cn('font-mono font-bold text-sm tabular-nums',
-            isDone ? 'text-foreground' : 'text-muted-foreground',
-          )}>
-            {teamMatch.team_a_score}–{teamMatch.team_b_score}
-          </span>
-          <span className="flex items-center gap-1.5">
+            <span className={cn('font-mono font-bold text-sm tabular-nums shrink-0',
+              aWon ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/60',
+            )}>
+              {teamMatch.team_a_score}
+            </span>
+          </div>
+          <div className="border-b border-border/30 ml-4 mr-2" />
+          {/* Team B row */}
+          <div className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full shrink-0" style={{ background: teamB?.color ?? '#6366f1' }} />
-            <span className={cn('font-semibold text-sm',
-              bWon && 'text-emerald-600 dark:text-emerald-400 font-bold',
-              aWon && 'text-muted-foreground font-normal',
+            {bWon && <span className="text-amber-400 text-xs">🏆</span>}
+            <span className={cn('font-semibold text-sm truncate flex-1 min-w-0',
+              bWon ? 'text-emerald-600 dark:text-emerald-400 font-bold' :
+              aWon ? 'text-muted-foreground font-normal' : 'text-foreground',
             )}>
               {teamB?.short_name ?? teamB?.name ?? '—'}
             </span>
-          </span>
+            <span className={cn('font-mono font-bold text-sm tabular-nums shrink-0',
+              bWon ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/60',
+            )}>
+              {teamMatch.team_b_score}
+            </span>
+          </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {isDirty && <span className="text-[10px] font-bold text-amber-500 uppercase">Unsaved</span>}

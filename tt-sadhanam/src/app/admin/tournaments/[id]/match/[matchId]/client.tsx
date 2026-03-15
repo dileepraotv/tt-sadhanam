@@ -130,7 +130,7 @@ export function MatchScoringClient({ initialMatch, initialGames, tournament, bac
     })
   }
 
-  const cfg        = FORMAT_CONFIGS[activeFormat]
+  const cfg        = FORMAT_CONFIGS[activeFormat as keyof typeof FORMAT_CONFIGS] ?? FORMAT_CONFIGS.bo5
   const isTeamSub  = (match as unknown as { match_kind?: string }).match_kind === 'team_submatch'
   const _ep1       = match.player1_id ?? (isTeamSub ? 'TEAM_A' : null)
   const _ep2       = match.player2_id ?? (isTeamSub ? 'TEAM_B' : null)
