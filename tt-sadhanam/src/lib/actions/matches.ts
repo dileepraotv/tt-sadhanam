@@ -238,15 +238,16 @@ export async function saveGameScore(
   }
 
   // ── 10. Audit log — fire and forget (non-blocking) ─────────────────────────
-  supabase.auth.getUser().then(({ data }: { data: { user: { id: string } | null } }) => { const user = data.user;
+  void supabase.auth.getUser().then(({ data }: { data: { user: { id: string } | null } }) => {
+    const user = data.user
     if (user) {
-      supabase.from('audit_log').insert({
+      void supabase.from('audit_log').insert({
         actor_id:   user.id,
         action:     isEdit ? 'edit_game_score' : 'add_game_score',
         table_name: 'games',
         record_id:  matchId,
         new_data: { game_number: gameNumber, score1, score2, match_winner: matchWinnerId, match_status: newStatus },
-      }).then(() => {}).catch(() => {})
+      })
     }
   })
 
