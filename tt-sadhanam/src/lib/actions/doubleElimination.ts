@@ -73,12 +73,22 @@ export async function generateDEBracket(
 
   const allMatches = [...winnersBracket, ...losersBracket, ...grandFinal]
 
+  // Assign globally unique match_numbers to avoid the unique constraint on
+  // (tournament_id, round, match_number). WB/LB/GF all use round=1,2,... internally
+  // which collide. We encode bracket_side into match_number via offsets:
+  //   WB: match_number as-is (1-based per round)
+  //   LB: offset by 10000
+  //   GF: offset by 20000
+  // This preserves display ordering while guaranteeing uniqueness.
+  const matchNumberOffset = (side: string) =>
+    side === 'losers' ? 10000 : side === 'grand_final' ? 20000 : 0
+
   // Build match rows using the pre-assigned IDs from the generator
   const rows = allMatches.map(m => ({
     id:                    m.id,
     tournament_id:         tournamentId,
     round:                 m.round,
-    match_number:          m.matchNumber,
+    match_number:          m.matchNumber + matchNumberOffset(m.bracketSide),
     round_name:            m.roundName,
     player1_id:            m.player1Id,
     player2_id:            m.player2Id,

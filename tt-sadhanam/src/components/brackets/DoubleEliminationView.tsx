@@ -256,8 +256,12 @@ function GrandFinalPanel({
   matchBasePath?: string
   onMatchClick?:  (match: Match) => void
 }) {
-  const gf1 = matches.find(m => m.match_number === 1)
-  const gf2 = matches.find(m => m.match_number === 2)  // bracket reset
+  // GF matches are identified by bracket_side; match_number has an offset of 20000
+  const gf1 = matches.find(m => m.bracket_side === 'grand_final' && m.match_number === 20001)
+    ?? matches.find(m => m.match_number === 1 && m.bracket_side === 'grand_final')
+    ?? matches.find(m => m.bracket_side === 'grand_final')
+  const gf2 = matches.find(m => m.bracket_side === 'grand_final' && m.match_number === 20002)
+    ?? matches.find(m => m.match_number === 2 && m.bracket_side === 'grand_final')
 
   if (!gf1) {
     return (
