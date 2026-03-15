@@ -416,7 +416,7 @@ export async function declareMatchWinner(
   // two follow-up round-trips later in the function.
   const { data: match } = await supabase
     .from('matches')
-    .select('tournament_id, player1_id, player2_id, status, next_match_id, next_slot, match_kind, tournament:tournaments(championship_id)')
+    .select('tournament_id, player1_id, player2_id, status, next_match_id, next_slot, match_kind, bracket_side, loser_next_match_id, loser_next_slot, tournament:tournaments(championship_id)')
     .eq('id', matchId)
     .single()
 
@@ -466,8 +466,25 @@ export async function declareMatchWinner(
     await supabase.from('matches').update({ [col]: winnerId }).eq('id', match.next_match_id)
   }
 
+  // 2b. DE: Route loser to Losers Bracket
+  const dMatchBracketSide = (match as unknown as { bracket_side?: string | null }).bracket_side
+  const dLoserNextMatchId = (match as unknown as { loser_next_match_id?: string | null }).loser_next_match_id
+  const dLoserNextSlot    = (match as unknown as { loser_next_slot?: number | null }).loser_next_slot
+  if (!isTeamSub && dMatchBracketSide === 'winners' && dLoserNextMatchId) {
+    const loserId = winnerId === match.player1_id ? match.player2_id : match.player1_id
+    if (loserId) {
+      const col = dLoserNextSlot === 1 ? 'player1_id' : 'player2_id'
+      await supabase.from('matches').update({ [col]: loserId }).eq('id', dLoserNextMatchId)
+    }
+  }
+  // 2c. DE Grand Final special handling
+  if (!isTeamSub && dMatchBracketSide === 'grand_final') {
+    const { advanceDEPlayers } = await import('./doubleElimination')
+    await advanceDEPlayers(matchId, match.tournament_id)
+  }
+
   // 3. KO Final: mark tournament complete when there's no next match
-  if (!isTeamSub && !match.next_match_id && match.match_kind !== 'round_robin') {
+  if (!isTeamSub && !match.next_match_id && match.match_kind !== 'round_robin' && dMatchBracketSide !== 'grand_final') {
     await supabase.from('tournaments').update({ status: 'complete' }).eq('id', match.tournament_id)
   }
 

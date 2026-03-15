@@ -408,6 +408,13 @@ function PureRRInlineScorer({ matchId, p1Name, p2Name, onSaved }: {matchId:strin
   if(loading)return <div className="text-xs text-muted-foreground py-2">Loading…</div>
   return(
     <div className="flex flex-col gap-2">
+      {/* Declare winner — always at the top */}
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide shrink-0">Declare:</span>
+        <button disabled={saving} onClick={async()=>{setSaving(true);const[{declareMatchWinner},mR]=await Promise.all([import('@/lib/actions/matches'),getSb().then(s=>s.from('matches').select('player1_id').eq('id',matchId).single())]);await declareMatchWinner(matchId,mR.data?.player1_id??'p1','declared');setSaving(false);await load();onSaved()}} className="flex-1 px-2 py-1.5 rounded-lg border text-xs font-semibold text-left transition-colors disabled:opacity-30 border-border hover:border-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/20 truncate">🏆 {p1Name}</button>
+        <button disabled={saving} onClick={async()=>{setSaving(true);const[{declareMatchWinner},mR]=await Promise.all([import('@/lib/actions/matches'),getSb().then(s=>s.from('matches').select('player2_id').eq('id',matchId).single())]);await declareMatchWinner(matchId,mR.data?.player2_id??'p2','declared');setSaving(false);await load();onSaved()}} className="flex-1 px-2 py-1.5 rounded-lg border text-xs font-semibold text-left transition-colors disabled:opacity-30 border-border hover:border-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/20 truncate">🏆 {p2Name}</button>
+      </div>
+      <div className="border-b border-border/30" />
       <div className="flex items-center gap-1">{(['bo3','bo5','bo7'] as const).map(f=><button key={f} onClick={async()=>{setFmt(f);const{updateMatchFormat}=await import('@/lib/actions/matches');await updateMatchFormat(matchId,f)}} className={cn('px-2.5 py-0.5 rounded-full text-[11px] font-bold transition-colors',fmt===f?'bg-orange-500 text-white':'text-muted-foreground hover:text-foreground')}>{f==='bo3'?'Best of 3':f==='bo5'?'Best of 5':'Best of 7'}</button>)}</div>
       <div className="grid gap-1" style={{gridTemplateColumns:`minmax(80px,1fr) repeat(${maxG},44px)`}}>
         <div className="text-[10px] font-bold text-muted-foreground uppercase py-1">Player</div>
