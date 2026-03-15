@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { Trophy, Calendar, MapPin, ArrowRight } from 'lucide-react'
+import { Trophy, Calendar, MapPin, ArrowRight, Users } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { Header }   from '@/components/shared/Header'
 import { Breadcrumb } from '@/components/shared/Breadcrumb'

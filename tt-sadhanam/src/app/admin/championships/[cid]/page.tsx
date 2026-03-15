@@ -1,7 +1,7 @@
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import {
-  Plus, Trophy, Calendar, MapPin, ArrowRight
+  Plus, Trophy, Calendar, MapPin, ArrowRight, Users
 } from 'lucide-react'
 import { getUser, createClient } from '@/lib/supabase/server'
 import { Header }    from '@/components/shared/Header'

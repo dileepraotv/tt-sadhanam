@@ -24,7 +24,7 @@ import type { Tournament, Player, Match, Stage, RRStageConfig } from '@/lib/type
 import { formatDate, formatFormatLabel } from '@/lib/utils'
 import { computeAllGroupStandings, groupProgress } from '@/lib/roundrobin/standings'
 import type { RRGroup, GroupStandings } from '@/lib/roundrobin/types'
-import { Calendar, MapPin, ExternalLink } from 'lucide-react'
+import { Calendar, MapPin, ExternalLink, Layers } from 'lucide-react'
 
 interface PageProps {
   params:       { cid: string; eid: string }
