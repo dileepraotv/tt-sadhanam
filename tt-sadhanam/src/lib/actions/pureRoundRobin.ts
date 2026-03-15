@@ -89,7 +89,7 @@ export async function generateLeagueFixtures(
     next_match_id: null,
     next_slot:     null,
     match_kind:    'round_robin',
-    format:        matchFormat,
+    match_format:  matchFormat,
   }))
 
   const { error: insertErr } = await supabase.from('matches').insert(rows)
