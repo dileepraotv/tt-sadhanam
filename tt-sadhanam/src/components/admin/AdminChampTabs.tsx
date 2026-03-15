@@ -24,13 +24,14 @@ interface Props {
   rrLive:                boolean
   koLive:                boolean
   stage2Generated:       boolean
+  stage1Complete:        boolean
   teamScheduleGenerated: boolean
   children:              React.ReactNode
 }
 
 export function AdminChampTabs({
   defaultTab, formatType,
-  playerCount, rrLive, koLive, stage2Generated, teamScheduleGenerated,
+  playerCount, rrLive, koLive, stage2Generated, stage1Complete, teamScheduleGenerated,
   children,
 }: Props) {
   const router       = useRouter()
@@ -150,6 +151,13 @@ export function AdminChampTabs({
             Groups
             {rrLive && <span className="live-dot ml-1" />}
           </TabsTrigger>
+          {stage1Complete && (
+            <TabsTrigger value="knockout" className="flex-none gap-1.5">
+              <Trophy className="h-3.5 w-3.5 hidden sm:block" />
+              Knockout
+              {koLive && <span className="live-dot ml-1" />}
+            </TabsTrigger>
+          )}
         </TabsList>
         {children}
       </Tabs>

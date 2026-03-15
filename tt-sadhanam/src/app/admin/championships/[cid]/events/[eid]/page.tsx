@@ -352,6 +352,7 @@ export default async function AdminEventPage({ params, searchParams }: PageProps
             rrLive={rrMatches.some(m => m.status === 'live')}
             koLive={koMatches.some(m => m.status === 'live')}
             stage2Generated={tournament.stage2_bracket_generated ?? false}
+            stage1Complete={tournament.stage1_complete ?? false}
             teamScheduleGenerated={tournament.bracket_generated ?? false}
           >
             {isMultiStage ? (
