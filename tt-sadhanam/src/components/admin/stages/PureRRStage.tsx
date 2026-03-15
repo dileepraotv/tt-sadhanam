@@ -1,4 +1,3 @@
-import React from 'react'
 'use client'
 
 /**
@@ -11,7 +10,7 @@ import React from 'react'
  *   HAS_SCHEDULE → Standings table + match list by matchday
  */
 
-import { useTransition, useState, useMemo } from 'react'
+import { useTransition, useState, useMemo, useRef, useCallback, useEffect } from 'react'
 import { RotateCcw, RefreshCw, Trophy, ChevronDown, ChevronRight } from 'lucide-react'
 import { matchStatusClasses } from '@/components/shared/MatchUI'
 import { cn } from '@/lib/utils'
@@ -324,7 +323,7 @@ function LeagueStandingsTable({ standings }: { standings: PlayerStanding[] }) {
 
 // ── PureRRFixtureRow — inline scoring for Pure RR matches ────────────────────
 function PureRRFixtureRow({ match: m, matchBase }: { match: Match; matchBase: string }) {
-  const [expanded, setExpanded] = React.useState(false)
+  const [expanded, setExpanded] = useState(false)
   const isBye      = m.status === 'bye'
   const isComplete = m.status === 'complete'
   const isLive     = m.status === 'live'
@@ -395,15 +394,15 @@ function PureRRFixtureRow({ match: m, matchBase }: { match: Match; matchBase: st
 }
 
 function PureRRInlineScorer({ matchId, p1Name, p2Name, onSaved }: {matchId:string;p1Name:string;p2Name:string;onSaved:()=>void}) {
-  const [games,  setGames]  = React.useState<{id:string;game_number:number;score1:number;score2:number}[]>([])
-  const [local,  setLocal]  = React.useState<Record<number,{s1:string;s2:string}>>({})
-  const [saving, setSaving] = React.useState(false)
-  const [loading,setLoad_]  = React.useState(true)
-  const [fmt,    setFmt]    = React.useState<'bo3'|'bo5'|'bo7'>('bo5')
-  const sbRef = React.useRef<any>(null)
-  const getSb = React.useCallback(async()=>{if(!sbRef.current){const{createClient}=await import('@/lib/supabase/client');sbRef.current=createClient()}return sbRef.current},[])
-  const load = React.useCallback(async()=>{setLoad_(true);const sb=await getSb();const[gR,mR]=await Promise.all([sb.from('games').select('*').eq('match_id',matchId).order('game_number'),sb.from('matches').select('match_format').eq('id',matchId).single()]);const gs=gR.data??[];setGames(gs);const init:Record<number,{s1:string;s2:string}>={};for(const g of gs)init[g.game_number]={s1:String(g.score1??''),s2:String(g.score2??'')};setLocal(init);if(mR.data?.match_format)setFmt(mR.data.match_format as any);setLoad_(false)},[matchId,getSb])
-  React.useEffect(()=>{load()},[load])
+  const [games,  setGames]  = useState<{id:string;game_number:number;score1:number;score2:number}[]>([])
+  const [local,  setLocal]  = useState<Record<number,{s1:string;s2:string}>>({})
+  const [saving, setSaving] = useState(false)
+  const [loading,setLoad_]  = useState(true)
+  const [fmt,    setFmt]    = useState<'bo3'|'bo5'|'bo7'>('bo5')
+  const sbRef = useRef<any>(null)
+  const getSb = useCallback(async()=>{if(!sbRef.current){const{createClient}=await import('@/lib/supabase/client');sbRef.current=createClient()}return sbRef.current},[])
+  const load = useCallback(async()=>{setLoad_(true);const sb=await getSb();const[gR,mR]=await Promise.all([sb.from('games').select('*').eq('match_id',matchId).order('game_number'),sb.from('matches').select('match_format').eq('id',matchId).single()]);const gs=gR.data??[];setGames(gs);const init:Record<number,{s1:string;s2:string}>={};for(const g of gs)init[g.game_number]={s1:String(g.score1??''),s2:String(g.score2??'')};setLocal(init);if(mR.data?.match_format)setFmt(mR.data.match_format as any);setLoad_(false)},[matchId,getSb])
+  useEffect(()=>{load()},[load])
   const maxG=fmt==='bo3'?3:fmt==='bo7'?7:5
   const handleSave=async()=>{setSaving(true);const entries=Array.from({length:maxG},(_,i)=>i+1).map(gn=>({gn,sc:local[gn]})).filter(({sc})=>sc&&!(sc.s1===''&&sc.s2===''));if(games.length>0){const{deleteGameScore}=await import('@/lib/actions/matches');const sb=await getSb();for(const g of games)await deleteGameScore(matchId,g.game_number);await sb.from('matches').update({status:'pending',winner_id:null,player1_games:0,player2_games:0,completed_at:null}).eq('id',matchId)};const{saveGameScore}=await import('@/lib/actions/matches');for(const{gn,sc}of entries){const s1=parseInt(sc!.s1,10),s2=parseInt(sc!.s2,10);if(isNaN(s1)||isNaN(s2))continue;const r=await saveGameScore(matchId,gn,s1,s2);if(!r.success){if(r.error?.includes('Cannot add')||r.error?.includes('already complete'))break;break}};setSaving(false);await load();onSaved()}
   if(loading)return <div className="text-xs text-muted-foreground py-2">Loading…</div>
