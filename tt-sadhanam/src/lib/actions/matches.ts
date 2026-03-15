@@ -112,10 +112,14 @@ export async function saveGameScore(
 ): Promise<{ success: true } | { success: false; error: string }> {
   const supabase = createClient()
 
-  // ── 1. Load match ───────────────────────────────────────────────────────────
+  // ── 1+2. Load match AND existing games in parallel ──────────────────────────
   let match: Awaited<ReturnType<typeof loadMatchWithFormat>>
+  let existingGames: Game[]
   try {
-    match = await loadMatchWithFormat(supabase, matchId)
+    ;[match, existingGames] = await Promise.all([
+      loadMatchWithFormat(supabase, matchId),
+      loadGames(supabase, matchId),
+    ])
   } catch (e) {
     return { success: false, error: (e as Error).message }
   }
@@ -131,9 +135,6 @@ export async function saveGameScore(
   // team_match_submatches). Use sentinels for engine calls; never write to DB.
   const p1 = player1Id ?? (isTeamSubmatch ? 'TEAM_A' : null)
   const p2 = player2Id ?? (isTeamSubmatch ? 'TEAM_B' : null)
-
-  // ── 2. Load existing games ──────────────────────────────────────────────────
-  const existingGames = await loadGames(supabase, matchId)
 
   // ── 3. Validate the score (table tennis rules) ──────────────────────────────
   const scoreValidation = validateGameScore({ score1, score2 })
@@ -168,8 +169,14 @@ export async function saveGameScore(
     )
   if (upsertErr) return { success: false, error: upsertErr.message }
 
-  // ── 6. Re-fetch all games as ground truth ───────────────────────────────────
-  const allGames = await loadGames(supabase, matchId)
+  // ── 6. Build allGames from in-memory state (avoids an extra round-trip) ─────
+  // Merge: replace existing game_number entry if editing, otherwise append.
+  const newGame = { game_number: gameNumber, score1, score2,
+                    winner_id: gameWinnerId, match_id: matchId } as unknown as Game
+  const allGames: Game[] = [
+    ...existingGames.filter(g => g.game_number !== gameNumber),
+    newGame,
+  ].sort((a, b) => a.game_number - b.game_number)
 
   // ── 7. Compute match state ──────────────────────────────────────────────────
   const matchState = computeMatchState(allGames, format, p1, p2)
@@ -230,17 +237,18 @@ export async function saveGameScore(
       .eq('id', match.tournament_id)
   }
 
-  // ── 10. Audit log ───────────────────────────────────────────────────────────
-  const { data: { user } } = await supabase.auth.getUser()
-  if (user) {
-    await supabase.from('audit_log').insert({
-      actor_id:   user.id,
-      action:     isEdit ? 'edit_game_score' : 'add_game_score',
-      table_name: 'games',
-      record_id:  matchId,
-      new_data: { game_number: gameNumber, score1, score2, match_winner: matchWinnerId, match_status: newStatus },
-    })
-  }
+  // ── 10. Audit log — fire and forget (non-blocking) ─────────────────────────
+  supabase.auth.getUser().then(({ data }: { data: { user: { id: string } | null } }) => { const user = data.user;
+    if (user) {
+      supabase.from('audit_log').insert({
+        actor_id:   user.id,
+        action:     isEdit ? 'edit_game_score' : 'add_game_score',
+        table_name: 'games',
+        record_id:  matchId,
+        new_data: { game_number: gameNumber, score1, score2, match_winner: matchWinnerId, match_status: newStatus },
+      }).then(() => {}).catch(() => {})
+    }
+  })
 
   // ── 11. Revalidate ──────────────────────────────────────────────────────────
   const champId = (match.tournament as unknown as { championship_id: string | null }).championship_id

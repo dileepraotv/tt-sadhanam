@@ -322,45 +322,31 @@ export async function updateSubmatchResult(
 ): Promise<{ error?: string }> {
   const supabase = createClient()
 
-  // Step 1: find the submatch row to get its parent team_match_id
+  // Steps 1+2: get submatch AND its parent team_match in one joined query
   const { data: submatch } = await supabase
     .from('team_match_submatches')
-    .select('id, team_match_id')
+    .select('id, team_match_id, team_match:team_match_id(id, team_a_id, team_b_id, status, round, group_id)')
     .eq('match_id', scoringMatchId)
     .single()
   if (!submatch) return {}  // not a team submatch
-
-  // Step 2: load the parent team_match (flat, no FK joins)
-  // Also fetch round + group_id so we know whether this is a group or KO match
-  const { data: teamMatch } = await supabase
-    .from('team_matches')
-    .select('id, team_a_id, team_b_id, status, round, group_id')
-    .eq('id', submatch.team_match_id)
-    .single()
+  const teamMatch = (submatch as any).team_match as {
+    id: string; team_a_id: string; team_b_id: string
+    status: string; round: number; group_id: string | null
+  } | null
   if (!teamMatch) return {}
-  // NOTE: Do NOT return early if status === 'complete'.
-  // Edits to individual rubbers must always trigger a full recount so the
-  // team score and winner reflect the current state of all rubbers.
 
-  // Step 3: recount ALL completed submatches for this team match from scratch.
-  // This is idempotent — no matter how many times called, result is always correct.
-  const { data: allSMs } = await supabase
+  // Steps 3+4: get all sibling submatches WITH their scoring in one joined query
+  const { data: siblingsWithScoring } = await supabase
     .from('team_match_submatches')
-    .select('match_id')
+    .select('match_id, scoring:match_id(id, player1_games, player2_games, status)')
     .eq('team_match_id', submatch.team_match_id)
-  const smMatchIds = (allSMs ?? []).map(s => s.match_id).filter(Boolean) as string[]
 
   let scoreA = 0, scoreB = 0
-  if (smMatchIds.length > 0) {
-    const { data: allScoring } = await supabase
-      .from('matches')
-      .select('id, player1_games, player2_games, status')
-      .in('id', smMatchIds)
-    for (const s of allScoring ?? []) {
-      if (s.status !== 'complete') continue
-      if ((s.player1_games ?? 0) > (s.player2_games ?? 0)) scoreA++
-      else if ((s.player2_games ?? 0) > (s.player1_games ?? 0)) scoreB++
-    }
+  for (const sib of siblingsWithScoring ?? []) {
+    const s = (sib as any).scoring
+    if (!s || s.status !== 'complete') continue
+    if ((s.player1_games ?? 0) > (s.player2_games ?? 0)) scoreA++
+    else if ((s.player2_games ?? 0) > (s.player1_games ?? 0)) scoreB++
   }
 
   const winsNeeded = 3  // best of 5 — first to 3

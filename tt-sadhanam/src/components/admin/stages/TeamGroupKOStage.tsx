@@ -1600,82 +1600,84 @@ function GroupsTab({
             const allDone      = groupMatches.length > 0 && groupMatches.every(m => m.status === 'complete')
 
             return (
-              <Card key={group.id} className={cn(allDone && 'bg-muted/20 border-border/40')}>
-                <CardHeader className="py-3">
-                  <button className="flex items-center justify-between w-full text-left"
-                    onClick={() => setExpandedGroup(isExpanded ? null : group.id)}>
+              <Card key={group.id} className={cn(
+                'overflow-hidden',
+                allDone ? 'border-border/40' :
+                groupMatches.some(m => m.status === 'live') ? 'border-orange-400/50' : '',
+              )}>
+                {/* Always-visible: group header + inline standings */}
+                <div className="px-4 pt-3 pb-2">
+                  {/* Group name + status */}
+                  <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
-                      {isExpanded
-                        ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                        : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
-                      <span className="font-semibold text-sm">{group.name}</span>
-                      <span className="text-xs text-muted-foreground hidden sm:inline">
-                        {groupTeams.map(t => t.name).join(', ')}
-                      </span>
+                      <span className="font-bold text-sm">{group.name}</span>
+                      {groupMatches.some(m => m.status === 'live') && (
+                        <span className="live-dot" />
+                      )}
+                      {allDone && <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">✓ Complete</span>}
                     </div>
-                    <div className="flex items-center gap-2">
-                      {allDone && <Check className="h-4 w-4 text-emerald-500" />}
-                      <span className="text-xs text-muted-foreground">
-                        {groupMatches.filter(m => m.status === 'complete').length}/{groupMatches.length}
-                      </span>
-                    </div>
-                  </button>
-                </CardHeader>
+                    <span className="text-xs text-muted-foreground">
+                      {groupMatches.filter(m => m.status === 'complete').length}/{groupMatches.length} done
+                    </span>
+                  </div>
+
+                  {/* Inline standings — always visible */}
+                  <div className="flex flex-col gap-0.5">
+                    {standings.map((row, idx) => {
+                      const t = teams.find(x => x.id === row.teamId)
+                      const isAdv = idx < stage.config.advanceCount
+                      const played = row.mW + row.mL
+                      return (
+                        <div key={row.teamId} className={cn(
+                          'flex items-center gap-2 px-2 py-1.5 rounded-lg',
+                          isAdv && played > 0 ? 'bg-emerald-50/50 dark:bg-emerald-950/15' : '',
+                        )}>
+                          <span className={cn(
+                            'text-xs font-bold w-4 text-center shrink-0',
+                            isAdv && played > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground',
+                          )}>{idx + 1}</span>
+                          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: t?.color ?? '#888' }} />
+                          <span className={cn(
+                            'text-sm flex-1 min-w-0 truncate',
+                            idx === 0 && played > 0 ? 'font-semibold text-foreground' : 'text-foreground',
+                          )}>{t?.name ?? '?'}</span>
+                          {/* Stats: TW · RW · GW */}
+                          <div className="flex items-center gap-3 shrink-0">
+                            <span className="text-xs font-mono tabular-nums" title="Ties Won">
+                              <span className={cn('font-bold', row.mW > 0 ? 'text-foreground' : 'text-muted-foreground/40')}>{row.mW}</span>
+                              <span className="text-muted-foreground/40">-{row.mL}</span>
+                            </span>
+                            <span className="text-xs font-mono tabular-nums text-muted-foreground" title="Rubbers">
+                              {row.rW}-{row.rL}
+                            </span>
+                          </div>
+                          {isAdv && played > 0 && <ArrowRight className="h-3 w-3 text-emerald-500 shrink-0" />}
+                        </div>
+                      )
+                    })}
+                  </div>
+                  {stage.config.advanceCount > 0 && standings.some(r => r.mW + r.mL > 0) && (
+                    <p className="text-[10px] text-muted-foreground mt-1.5 px-1">
+                      Top {stage.config.advanceCount} advance · TW = Tie wins · RW = Rubber wins
+                    </p>
+                  )}
+                </div>
+
+                {/* Fixtures toggle */}
+                <button
+                  onClick={() => setExpandedGroup(isExpanded ? null : group.id)}
+                  className="w-full flex items-center justify-between px-4 py-2 border-t border-border/40 bg-muted/20 hover:bg-muted/30 transition-colors text-left"
+                >
+                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    {isExpanded ? 'Hide Fixtures' : 'Show Fixtures'}
+                  </span>
+                  {isExpanded
+                    ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                    : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                </button>
 
                 {isExpanded && (
-                  <CardContent className="flex flex-col gap-5 pt-0">
-
-                    {/* Standings table (ITTF columns) */}
-                    {groupMatches.length > 0 && (
-                      <div>
-                        <p className={cn(T.roundHeading, "mb-2")}>Standings</p>
-                        <div className="overflow-x-auto rounded-lg border border-border">
-                          <table className="w-full text-sm">
-                            <thead>
-                              <tr className="text-xs text-muted-foreground bg-muted/40 border-b border-border">
-                                <th className="text-left py-1.5 px-2 font-medium w-6">#</th>
-                                <th className="text-left py-1.5 px-2 font-medium">Team</th>
-                                <th className="text-center py-1.5 px-1 font-medium w-8" title="Tie wins">TW</th>
-                                <th className="text-center py-1.5 px-1 font-medium w-8" title="Tie losses">TL</th>
-                                <th className="text-center py-1.5 px-1 font-medium w-8" title="Rubber wins">RW</th>
-                                <th className="text-center py-1.5 px-1 font-medium w-8" title="Rubber losses">RL</th>
-                                <th className="text-center py-1.5 px-1 font-medium w-8" title="Game wins">GW</th>
-                                <th className="text-center py-1.5 px-1 font-medium w-8" title="Game losses">GL</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {standings.map((row, idx) => {
-                                const t = teams.find(x => x.id === row.teamId)
-                                const isAdv = idx < stage.config.advanceCount
-                                return (
-                                  <tr key={row.teamId}
-                                    className={cn('border-b border-border/40 last:border-0', isAdv && 'bg-emerald-50/40 dark:bg-emerald-950/20')}>
-                                    <td className="py-1.5 px-2 text-xs text-muted-foreground">{idx + 1}</td>
-                                    <td className="py-1.5 px-2">
-                                      <div className="flex items-center gap-1.5">
-                                        <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: t?.color ?? '#888' }} />
-                                        <span className="font-medium truncate max-w-[120px]">{t?.name ?? '?'}</span>
-                                        {isAdv && <ArrowRight className="h-3 w-3 text-emerald-500 shrink-0" />}
-                                      </div>
-                                    </td>
-                                    <td className="py-1.5 px-1 text-center font-mono text-xs font-semibold">{row.mW}</td>
-                                    <td className="py-1.5 px-1 text-center font-mono text-xs text-muted-foreground">{row.mL}</td>
-                                    <td className="py-1.5 px-1 text-center font-mono text-xs">{row.rW}</td>
-                                    <td className="py-1.5 px-1 text-center font-mono text-xs text-muted-foreground">{row.rL}</td>
-                                    <td className="py-1.5 px-1 text-center font-mono text-xs">{row.gW}</td>
-                                    <td className="py-1.5 px-1 text-center font-mono text-xs text-muted-foreground">{row.gL}</td>
-                                  </tr>
-                                )
-                              })}
-                            </tbody>
-                          </table>
-                          <p className="text-[10px] text-muted-foreground px-2 py-1.5 border-t border-border/40">
-                            TW/TL = Tie wins/losses · RW/RL = Rubber wins/losses · GW/GL = Game wins/losses
-                            {stage.config.advanceCount > 0 && ` · ↗ Top ${stage.config.advanceCount} advance`}
-                          </p>
-                        </div>
-                      </div>
-                    )}
+                  <CardContent className="flex flex-col gap-3 pt-3">
 
                     {/* Fixtures with inline scoring */}
                     {groupMatches.length > 0 && (
@@ -1695,42 +1697,50 @@ function GroupsTab({
                                 ''
                               )}>
                                 <CardContent className="pt-3 pb-3">
-                                  {/* Fixture header — two-line: Team A row, Team B row */}
+                                  {/* Fixture header — grid layout for perfect score alignment */}
                                   <button className="w-full text-left" onClick={() => setExpandedMatch(isExpM ? null : m.id)}>
-                                    {/* Team A row */}
-                                    <div className="flex items-center gap-2 py-1">
-                                      <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                                    <div className="grid py-1" style={{ gridTemplateColumns: '1fr 2.5rem 4.5rem' }}>
+                                      {/* Team A name */}
+                                      <div className="flex items-center gap-1.5 min-w-0 pr-2">
                                         {isComplete && m.winner_team_id === m.team_a_id
-                                          ? <span className="text-amber-500 text-sm shrink-0">🏆</span>
-                                          : <span className="w-4 shrink-0" />}
-                                        <span className={cn('text-sm truncate', isComplete && m.winner_team_id === m.team_a_id ? 'font-bold text-emerald-600 dark:text-emerald-400' : isComplete ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground')}>
+                                          ? <span className="text-amber-500 text-xs shrink-0">🏆</span>
+                                          : <span className="w-3.5 shrink-0" />}
+                                        <span className={cn('text-sm truncate',
+                                          isComplete && m.winner_team_id === m.team_a_id ? 'font-bold text-emerald-600 dark:text-emerald-400' :
+                                          isComplete ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground')}>
                                           {m.team_a_name ?? <span className="italic text-muted-foreground/50">TBD</span>}
                                         </span>
                                       </div>
-                                      <span className={cn('font-mono font-bold text-sm shrink-0 w-6 text-right', isComplete && m.winner_team_id === m.team_a_id ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/60')}>
+                                      {/* Team A score — centre column */}
+                                      <span className={cn('font-mono font-bold text-lg tabular-nums text-center self-center',
+                                        isComplete && m.winner_team_id === m.team_a_id ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/60')}>
                                         {m.team_a_score}
                                       </span>
-                                      <div className="flex items-center gap-1.5 shrink-0">
-                                        <span className="text-xs text-muted-foreground">{doneCount}/{m.submatches.length}</span>
-                                        <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform', isExpM && 'rotate-180')} />
+                                      {/* Action column — progress + chevron */}
+                                      <div className="flex items-center justify-end gap-1 text-xs text-muted-foreground self-center">
+                                        <span>{doneCount}/{m.submatches.length}</span>
+                                        <ChevronDown className={cn('h-3.5 w-3.5 text-muted-foreground transition-transform shrink-0', isExpM && 'rotate-180')} />
                                       </div>
                                     </div>
-                                    {/* Divider */}
-                                    <div className="border-b border-border/30 ml-6 mr-16" />
-                                    {/* Team B row */}
-                                    <div className="flex items-center gap-2 py-1">
-                                      <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                                    <div className="border-b border-border/20 mx-1" />
+                                    <div className="grid py-1" style={{ gridTemplateColumns: '1fr 2.5rem 4.5rem' }}>
+                                      {/* Team B name */}
+                                      <div className="flex items-center gap-1.5 min-w-0 pr-2">
                                         {isComplete && m.winner_team_id === m.team_b_id
-                                          ? <span className="text-amber-500 text-sm shrink-0">🏆</span>
-                                          : <span className="w-4 shrink-0" />}
-                                        <span className={cn('text-sm truncate', isComplete && m.winner_team_id === m.team_b_id ? 'font-bold text-emerald-600 dark:text-emerald-400' : isComplete ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground')}>
+                                          ? <span className="text-amber-500 text-xs shrink-0">🏆</span>
+                                          : <span className="w-3.5 shrink-0" />}
+                                        <span className={cn('text-sm truncate',
+                                          isComplete && m.winner_team_id === m.team_b_id ? 'font-bold text-emerald-600 dark:text-emerald-400' :
+                                          isComplete ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground')}>
                                           {m.team_b_name ?? <span className="italic text-muted-foreground/50">TBD</span>}
                                         </span>
                                       </div>
-                                      <span className={cn('font-mono font-bold text-sm shrink-0 w-6 text-right', isComplete && m.winner_team_id === m.team_b_id ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/60')}>
+                                      {/* Team B score */}
+                                      <span className={cn('font-mono font-bold text-lg tabular-nums text-center self-center',
+                                        isComplete && m.winner_team_id === m.team_b_id ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/60')}>
                                         {m.team_b_score}
                                       </span>
-                                      <span className="w-16 shrink-0" />{/* spacer to align with action above */}
+                                      <span />{/* empty action column */}
                                     </div>
                                   </button>
 
