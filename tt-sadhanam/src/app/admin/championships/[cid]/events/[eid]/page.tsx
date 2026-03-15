@@ -318,7 +318,7 @@ export default async function AdminEventPage({ params, searchParams }: PageProps
             </div>
             {/* Actions row — always visible on mobile */}
             <div className="flex items-center gap-2 flex-wrap">
-            {!isMultiStage && !isSingleRR && !isDE && !isAnyTeamLeague && !isTeamGroupKO && (
+            {!isMultiStage && !isSingleRR && !isPureRR && !isDE && !isAnyTeamLeague && !isTeamGroupKO && (
                 <GenerateDrawButton tournament={tournament} players={players} />
               )}
               <EventHeaderActions
