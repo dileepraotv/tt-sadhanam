@@ -29,7 +29,11 @@ function FormatTypeLabel({ t }: { t: string | undefined }) {
   if (t === 'team_league_ko')
     return <span className="flex items-center gap-1 text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 px-1.5 py-0.5 rounded-full border border-indigo-200 dark:border-indigo-800/60"><Swords className="h-3 w-3" /> Teams - Corbillon</span>
   if (t === 'team_league_swaythling')
-    return <span className="flex items-center gap-1 text-[10px] font-semibold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 px-1.5 py-0.5 rounded-full border border-violet-200 dark:border-violet-800/60"><Swords className="h-3 w-3" /> Teams - Swaythling</span>
+    return <span className="flex items-center gap-1 text-[10px] font-semibold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 px-1.5 py-0.5 rounded-full border border-violet-200 dark:border-violet-800/60"><Swords className="h-3 w-3" /> Teams - Swaythling KO</span>
+  if (t === 'team_group_corbillon')
+    return <span className="flex items-center gap-1 text-[10px] font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-900/20 px-1.5 py-0.5 rounded-full border border-rose-200 dark:border-rose-800/60"><Layers className="h-3 w-3" /> Teams - Corbillon Group KO</span>
+  if (t === 'team_group_swaythling')
+    return <span className="flex items-center gap-1 text-[10px] font-semibold text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/20 px-1.5 py-0.5 rounded-full border border-teal-200 dark:border-teal-800/60"><Layers className="h-3 w-3" /> Teams - Swaythling Group KO</span>
   return <span className="flex items-center gap-1 text-[10px] font-semibold text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full border border-border"><Layers className="h-3 w-3" /> {t}</span>
 }
 
@@ -91,7 +95,7 @@ async function getData(cid: string, userId: string) {
       ...ev,
       _live:  evMatches.filter(m => m.status === 'live').length,
       _done:  evMatches.filter(m => m.status === 'complete').length,
-      _total: evMatches.length,
+      _total: evMatches.filter(m => m.status !== 'bye').length,
       _winner: finalWinners[ev.id],
     }
   })

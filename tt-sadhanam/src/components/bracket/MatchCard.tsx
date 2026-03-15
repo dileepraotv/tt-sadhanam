@@ -54,7 +54,7 @@ export function MatchCard({ match, compact = false, onClick, isAdmin, href }: Ma
       className={cn(
         'match-card w-full text-left block rounded-xl border overflow-hidden transition-all',
         isLive     ? 'border-orange-400/70 bg-orange-50/30 dark:bg-orange-950/10 shadow-sm' :
-        isComplete ? 'border-border/30 bg-muted/10 opacity-60' :
+        isComplete ? 'border-border/40 bg-muted/5 opacity-40' :
         isBye      ? 'border-border/20 bg-muted/5 opacity-50' :
                      'border-border bg-card',
         (onClick || href) && 'cursor-pointer hover:border-orange-400/50 hover:shadow-sm',

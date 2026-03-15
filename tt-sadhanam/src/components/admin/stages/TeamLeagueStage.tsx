@@ -760,8 +760,10 @@ function TeamSetupView({
               ) : (
                 <CardContent className="p-3">
                   <div className="flex items-start gap-3">
-                    <div className="w-1 self-stretch rounded-full shrink-0"
-                      style={{ background: team.color ?? '#F06321', minWidth: 4 }} />
+                    <div className="h-9 w-9 rounded-full shrink-0 flex items-center justify-center text-white text-xs font-bold"
+                      style={{ background: team.color ?? '#F06321' }}>
+                      {(team.short_name ?? team.name).slice(0, 2).toUpperCase()}
+                    </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-semibold text-sm text-foreground">{team.name}</span>
@@ -1382,7 +1384,11 @@ function TeamKOBracketUI({
     }
   }, [latestRound, urlRound])
 
-  const activeMatches = roundEntries.find(([r]) => r === activeRound)?.[1] ?? []
+  const rawActiveMatches = roundEntries.find(([r]) => r === activeRound)?.[1] ?? []
+  const activeMatches = [...rawActiveMatches].sort((a, b) => {
+    const o = (s: string) => s === 'live' ? 0 : s === 'pending' ? 1 : 2
+    return o(a.status) - o(b.status)
+  })
   const doneCount     = koMatches.filter(m => m.status === 'complete').length
   const liveCount     = koMatches.filter(m => m.status === 'live').length
 
@@ -1600,7 +1606,7 @@ function TeamMatchBracketCard({
   return (
     <div className={cn(
       'rounded-2xl border overflow-hidden transition-all duration-150',
-      isDone  && 'opacity-60 bg-muted/10 border-border/20',
+      isDone  && 'opacity-40 bg-muted/5 border-border/30',
       isLive  && !isDone && 'bg-card border-orange-400 dark:border-orange-500 shadow-md shadow-orange-100 dark:shadow-orange-950/30',
       !isLive && !isDone && 'bg-card border-border',
       isHighlighted && 'ring-2 ring-orange-400/50',
@@ -1613,50 +1619,39 @@ function TeamMatchBracketCard({
         <div className="flex items-center gap-3">
           {/* Teams + score */}
           <div className="flex-1 min-w-0">
-            {/* Mobile: stacked */}
-            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
+            {/* Two-line: Team A row / Team B row with aligned score column */}
+            <div className="grid" style={{ gridTemplateColumns: '1fr 2.5rem' }}>
               {/* Team A */}
-              <div className="flex items-center gap-2 min-w-0">
+              <div className="flex items-center gap-1.5 min-w-0 pr-2 py-0.5">
                 <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: teamA?.color ?? '#F06321' }} />
                 <WinnerTrophy show={aWon} size="sm" />
-                <span className={cn('font-bold text-sm truncate',
-                  aWon && 'text-emerald-600 dark:text-emerald-400 font-bold',
-                  bWon && 'text-muted-foreground font-normal',
-                  !aWon && !bWon && 'text-foreground font-bold',
+                <span className={cn('text-sm truncate',
+                  aWon ? 'font-bold text-emerald-600 dark:text-emerald-400' :
+                  bWon ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground',
                 )}>
-                  {teamA?.name ?? 'TBD'}
+                  {teamA?.name ?? <span className="italic text-muted-foreground/50">TBD</span>}
                 </span>
               </div>
-
-              {/* Score */}
-              <div className="flex items-center gap-2 shrink-0 sm:mx-1">
-                <span className={cn(
-                  'font-mono font-bold tabular-nums text-base leading-none',
-                  isDone ? 'text-foreground' : 'text-muted-foreground/60',
-                )}>
-                  {teamMatch.team_a_score}
-                </span>
-                <span className="text-xs text-muted-foreground">–</span>
-                <span className={cn(
-                  'font-mono font-bold tabular-nums text-base leading-none',
-                  isDone ? 'text-foreground' : 'text-muted-foreground/60',
-                )}>
-                  {teamMatch.team_b_score}
-                </span>
-              </div>
-
+              <span className={cn('font-mono font-bold tabular-nums text-base text-center self-center',
+                aWon ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/60',
+              )}>{teamMatch.team_a_score}</span>
+            </div>
+            <div className="border-b border-border/20 my-0.5" />
+            <div className="grid" style={{ gridTemplateColumns: '1fr 2.5rem' }}>
               {/* Team B */}
-              <div className="flex items-center gap-2 min-w-0">
+              <div className="flex items-center gap-1.5 min-w-0 pr-2 py-0.5">
                 <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: teamB?.color ?? '#6366f1' }} />
                 <WinnerTrophy show={bWon} size="sm" />
-                <span className={cn('font-bold text-sm truncate',
-                  bWon && 'text-emerald-600 dark:text-emerald-400 font-bold',
-                  aWon && 'text-muted-foreground font-normal',
-                  !aWon && !bWon && 'text-foreground font-bold',
+                <span className={cn('text-sm truncate',
+                  bWon ? 'font-bold text-emerald-600 dark:text-emerald-400' :
+                  aWon ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground',
                 )}>
-                  {teamB?.name ?? 'TBD'}
+                  {teamB?.name ?? <span className="italic text-muted-foreground/50">TBD</span>}
                 </span>
               </div>
+              <span className={cn('font-mono font-bold tabular-nums text-base text-center self-center',
+                bWon ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/60',
+              )}>{teamMatch.team_b_score}</span>
             </div>
 
             {/* Sub-match progress */}

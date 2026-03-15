@@ -1692,7 +1692,7 @@ function GroupsTab({
                             return (
                               <Card key={m.id} className={cn(
                                 'overflow-hidden transition-all',
-                                m.status === 'complete' ? 'opacity-60 border-border/20' :
+                                m.status === 'complete' ? 'opacity-40 border-border/30' :
                                 m.status === 'live'     ? 'border-orange-400/70 shadow-sm shadow-orange-100/40 dark:shadow-orange-900/10' :
                                 ''
                               )}>
@@ -1830,7 +1830,7 @@ function KOMatchCard({ match, teams, isCorbillon, tournament, highlightFix, load
   return (
     <div className={cn(
       'rounded-2xl border overflow-hidden transition-all',
-      isDone  && 'bg-muted/20 border-border/40 opacity-90',
+      isDone  && 'bg-muted/10 border-border/30 opacity-40',
       isLive  && 'border-orange-400 dark:border-orange-500 shadow-md shadow-orange-100/40 dark:shadow-orange-950/30 bg-card',
       !isLive && !isDone && 'bg-card border-border',
       isHighlighted && 'ring-2 ring-orange-400/50',

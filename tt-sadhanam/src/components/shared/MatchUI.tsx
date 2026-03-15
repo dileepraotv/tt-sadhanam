@@ -74,7 +74,7 @@ export function matchStatusClasses(
 
   // 'card' variant
   if (isLive)     return 'border-orange-400/70 bg-orange-50/50 dark:bg-orange-950/15 shadow-sm shadow-orange-200/40 dark:shadow-orange-900/20'
-  if (isComplete) return 'border-border/40 bg-muted/10'
+  if (isComplete) return 'border-border/30 bg-muted/5 opacity-40'
   return 'border-border bg-card'
 }
 

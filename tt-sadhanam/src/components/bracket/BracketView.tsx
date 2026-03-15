@@ -544,12 +544,33 @@ function SingleMatchInlineScorer({ matchId, player1Name, player2Name, onSaved }:
     await updateMatchFormat(matchId, f)
   }
 
+  const [saveError, setSaveError] = useState<string | null>(null)
+
+  // TT score validation
+  const validateScore = (s1: number, s2: number): string | null => {
+    if (s1 < 0 || s2 < 0) return 'Scores cannot be negative'
+    const max = Math.max(s1, s2), min = Math.min(s1, s2)
+    if (max < 11) return `Winner needs at least 11 points (got ${max})`
+    if (min >= 10 && max - min < 2) return `At deuce, must win by 2 — ${s1}-${s2} is invalid`
+    if (min >= 10 && max - min > 2) return `At deuce, must win by exactly 2`
+    if (min < 10 && max > 11) return `Game ends at 11 when opponent has < 10`
+    return null
+  }
+
   const handleSave = async () => {
-    setSaving(true)
+    setSaveError(null)
     const entries = Array.from({length:maxG},(_,i)=>i+1)
       .map(gn => ({gn, sc: local[gn]}))
       .filter(({sc}) => sc && !(sc.s1==='' && sc.s2===''))
-    if (!entries.length) { setSaving(false); return }
+    if (!entries.length) { setSaveError('Enter at least one game score'); return }
+    // Front-end validation
+    for (const {gn, sc} of entries) {
+      const s1 = parseInt(sc!.s1, 10), s2 = parseInt(sc!.s2, 10)
+      if (isNaN(s1) || isNaN(s2)) { setSaveError(`Game ${gn}: enter valid numbers`); return }
+      const err = validateScore(s1, s2)
+      if (err) { setSaveError(`Game ${gn}: ${err}`); return }
+    }
+    setSaving(true)
     // Reset if already had scores
     if (games.length > 0) {
       const { deleteGameScore } = await import('@/lib/actions/matches')
@@ -564,7 +585,9 @@ function SingleMatchInlineScorer({ matchId, player1Name, player2Name, onSaved }:
       const res = await saveGameScore(matchId, gn, s1, s2)
       if (!res.success) {
         if (res.error?.includes('Cannot add') || res.error?.includes('already complete')) break
-        break
+        setSaveError(res.error ?? 'Failed to save scores')
+        setSaving(false)
+        return
       }
     }
     setSaving(false)
@@ -636,7 +659,13 @@ function SingleMatchInlineScorer({ matchId, player1Name, player2Name, onSaved }:
       </div>
 
       {/* Save */}
-      <div className="flex items-center gap-2 pt-1">
+      <div className="flex flex-col gap-1.5 pt-1">
+        {saveError && (
+          <p className="text-xs text-red-600 dark:text-red-400 font-medium flex items-center gap-1">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> {saveError}
+          </p>
+        )}
+        <div className="flex items-center gap-2">
         <button onClick={handleSave} disabled={saving}
           className="px-4 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold transition-colors disabled:opacity-50 flex items-center gap-1.5">
           {saving ? <span className="tt-spinner tt-spinner-sm" /> : <Check className="h-3 w-3" />}
@@ -664,6 +693,7 @@ function SingleMatchInlineScorer({ matchId, player1Name, player2Name, onSaved }:
           className="px-3 py-1.5 rounded-lg border border-border text-xs font-semibold text-muted-foreground hover:border-amber-400 hover:text-foreground transition-colors disabled:opacity-30 flex items-center gap-1">
           <Trophy className="h-3 w-3 text-amber-500" /> {player2Name} wins
         </button>
+        </div>
       </div>
     </div>
   )
