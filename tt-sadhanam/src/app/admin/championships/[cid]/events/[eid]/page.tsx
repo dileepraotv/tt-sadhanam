@@ -12,6 +12,7 @@ import { PlayerManager }      from '@/components/admin/PlayerManager'
 import { GenerateDrawButton } from '@/components/admin/BracketControls'
 import { MultiStageSetup }    from '@/components/admin/MultiStageSetup'
 import { SingleRRStage }      from '@/components/admin/stages/SingleRRStage'
+import { SingleKOStage }      from '@/components/admin/stages/SingleKOStage'
 import { PureRRStage }        from '@/components/admin/stages/PureRRStage'
 import { DoubleEliminationStage } from '@/components/admin/stages/DoubleEliminationStage'
 import { TeamLeagueStage }    from '@/components/admin/stages/TeamLeagueStage'
@@ -232,7 +233,7 @@ export default async function AdminEventPage({ params, searchParams }: PageProps
   // Tab routing
   const validTabs =
     isMultiStage   ? ['players','stage1','stage2'] :
-    isSingleRR     ? ['players','groups'] :
+    isSingleRR     ? (tournament.stage1_complete ? ['players','groups','knockout'] : ['players','groups']) :
     isTeamLeague   ? ['teams','schedule','knockout'] :
     (isTeamLeagueKO || isTeamSwaythling) ? ['teams','bracket'] :
     isTeamGroupKO  ? ['teams','groups','knockout'] :
@@ -408,6 +409,25 @@ export default async function AdminEventPage({ params, searchParams }: PageProps
                     initialGroup={initialGroup}
                   />
                 </TabsContent>
+                {tournament.stage1_complete && (
+                  <TabsContent value="knockout">
+                    {tournament.stage2_bracket_generated ? (
+                      <BracketView
+                        tournament={tournament}
+                        matches={koMatches}
+                        isAdmin
+                        matchBasePath={matchBase}
+                      />
+                    ) : (
+                      <SingleKOStage
+                        tournament={tournament}
+                        players={players}
+                        matches={koMatches}
+                        matchBase={matchBase}
+                      />
+                    )}
+                  </TabsContent>
+                )}
               </>
             ) : isPureRR ? (
               <>

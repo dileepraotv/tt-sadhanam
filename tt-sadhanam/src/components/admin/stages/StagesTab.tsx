@@ -21,6 +21,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { Tournament, Player, Match, Stage } from '@/lib/types'
 import type { GroupStandings } from '@/lib/roundrobin/types'
 import { SingleKOStage }          from './SingleKOStage'
+import { BracketView } from '@/components/bracket/BracketView'
 import { SingleRRStage }          from './SingleRRStage'
 import { MultiStagePanel }        from './MultiStagePanel'
 import { PureRRStage }            from './PureRRStage'
@@ -89,6 +90,32 @@ export function StagesTab({
 
   // ── 2. Single Round Robin ─────────────────────────────────────────────────
   if (ft === 'single_round_robin') {
+    // After group stage closes, show KO bracket below the locked group stage
+    if (tournament.stage1_complete) {
+      return (
+        <div className="flex flex-col gap-6">
+          <SingleRRStage
+            tournament={tournament}
+            players={players}
+            stage={rrStage}
+            standings={rrStandings}
+            rrMatches={rrMatches}
+            hasScores={hasScores}
+            allComplete={allComplete}
+            matchBase={matchBase}
+          />
+          <div className="border-t border-border/60 pt-6">
+            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-4">Knockout Stage</p>
+            <SingleKOStage
+              tournament={tournament}
+              players={players}
+              matches={koMatches}
+              matchBase={matchBase}
+            />
+          </div>
+        </div>
+      )
+    }
     return (
       <SingleRRStage
         tournament={tournament}
