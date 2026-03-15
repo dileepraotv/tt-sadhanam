@@ -493,7 +493,7 @@ function RoundList({ round, isAdmin, matchBasePath, onMatchClick, expandedMatchI
 // Inline game-score entry for singles knockout matches.
 // Same logic as team RubberScorer — format selector, per-game score grid, save.
 
-function SingleMatchInlineScorer({ matchId, player1Name, player2Name, onSaved }: {
+export function SingleMatchInlineScorer({ matchId, player1Name, player2Name, onSaved }: {
   matchId:     string
   player1Name: string
   player2Name: string
