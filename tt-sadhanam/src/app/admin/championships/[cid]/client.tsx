@@ -159,13 +159,18 @@ export function EventActions({ cid, eventId, eventName }: EventActionsProps) {
     <>
       <button
         onClick={(e) => {
-          e.preventDefault()   // don't follow the parent Link
-          e.stopPropagation()  // don't bubble up
+          e.preventDefault()
+          e.stopPropagation()
           setShowDelete(true)
+        }}
+        onPointerDown={(e) => {
+          // Prevent the parent <Link> from receiving the pointer event on mobile
+          e.stopPropagation()
         }}
         disabled={isPending}
         title="Delete event"
         aria-label="Delete event"
+        style={{ position: 'relative', zIndex: 10 }}
         className="flex items-center justify-center w-8 h-8 rounded-lg text-muted-foreground/70 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-all touch-manipulation"
       >
         <Trash2 className="h-4 w-4" />

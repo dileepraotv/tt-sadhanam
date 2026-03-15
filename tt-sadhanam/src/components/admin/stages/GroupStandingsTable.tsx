@@ -83,14 +83,14 @@ export function GroupStandingsTable({
                 {done && <span className={cn('text-[10px] font-bold', isActive ? 'text-white/80' : 'text-emerald-500')}>✓ Done</span>}
                 {!done && played && <span className={cn('h-2 w-2 rounded-full shrink-0', isActive ? 'bg-white/60' : 'bg-orange-400 animate-pulse')} />}
               </div>
-              <div className="flex items-center gap-1 flex-wrap">
-                {gs.standings.slice(0, 6).map(s => (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {gs.standings.slice(0, 6).map((s, si) => (
                   <span key={s.playerId} title={s.playerName}
                     className={cn(
                       'text-[10px] font-medium truncate max-w-[70px]',
                       isActive ? 'text-white/90' : 'text-muted-foreground',
                     )}>
-                    {s.playerName.split(' ')[0]}
+                    <span className={cn('font-mono opacity-60 mr-0.5', isActive ? 'text-white/60' : '')}>{si + 1}.</span>{s.playerName.split(' ')[0]}
                   </span>
                 ))}
                 {gs.standings.length > 6 && (
@@ -244,9 +244,11 @@ export function GroupStandingsTable({
                     {allDone && <span className="text-[10px] text-muted-foreground">✓ complete</span>}
                   </div>
                   <div className="flex flex-col gap-1.5">
-                    {sortedDay.map(m => (
-                      <FixtureRow key={m.id} match={m} matchBase={matchBase} isAdmin={isAdmin} />
-                    ))}
+                    {sortedDay
+                      .filter(m => m.status !== 'pending' || m.player1_id || m.player2_id)
+                      .map(m => (
+                        <FixtureRow key={m.id} match={m} matchBase={matchBase} isAdmin={isAdmin} />
+                      ))}
                   </div>
                 </div>
               )
@@ -522,10 +524,37 @@ function InlineMatchScorer({ matchId, player1Name, player2Name }: {
           )
         })}
       </div>
-      <button onClick={handleSave} disabled={saving}
-        className="self-start mt-1 px-4 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold transition-colors disabled:opacity-50">
-        {saving ? 'Saving…' : 'Save Scores'}
-      </button>
+      <div className="flex items-center gap-2 flex-wrap">
+        <button onClick={handleSave} disabled={saving}
+          className="px-4 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold transition-colors disabled:opacity-50">
+          {saving ? 'Saving…' : 'Save Scores'}
+        </button>
+        <span className="text-[10px] text-muted-foreground">or declare:</span>
+        <button disabled={saving} onClick={async () => {
+          setSaving(true)
+          const [{ declareMatchWinner }, mRow] = await Promise.all([
+            import('@/lib/actions/matches'),
+            sb.from('matches').select('player1_id').eq('id', matchId).single(),
+          ])
+          await declareMatchWinner(matchId, mRow.data?.player1_id ?? 'p1', 'declared')
+          setSaving(false)
+          await load()
+        }} className="px-3 py-1.5 rounded-lg border border-border text-xs font-semibold text-muted-foreground hover:border-amber-400 hover:text-foreground transition-colors disabled:opacity-30">
+          🏆 {player1Name} wins
+        </button>
+        <button disabled={saving} onClick={async () => {
+          setSaving(true)
+          const [{ declareMatchWinner }, mRow] = await Promise.all([
+            import('@/lib/actions/matches'),
+            sb.from('matches').select('player2_id').eq('id', matchId).single(),
+          ])
+          await declareMatchWinner(matchId, mRow.data?.player2_id ?? 'p2', 'declared')
+          setSaving(false)
+          await load()
+        }} className="px-3 py-1.5 rounded-lg border border-border text-xs font-semibold text-muted-foreground hover:border-amber-400 hover:text-foreground transition-colors disabled:opacity-30">
+          🏆 {player2Name} wins
+        </button>
+      </div>
     </div>
   )
 }

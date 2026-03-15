@@ -37,17 +37,7 @@ export async function createTeam(input: {
   doublesP2Pos?: number | null
 }): Promise<{ error?: string; teamId?: string }> {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'Not authenticated' }
-
-  const { data: t } = await supabase
-    .from('tournaments')
-    .select('id')
-    .eq('id', input.tournamentId)
-    .eq('created_by', user.id)
-    .single()
-  if (!t) return { error: 'Tournament not found' }
-
+  // RLS enforces ownership — skip the redundant tournament ownership check query
   const { data, error } = await supabase
     .from('teams')
     .insert({

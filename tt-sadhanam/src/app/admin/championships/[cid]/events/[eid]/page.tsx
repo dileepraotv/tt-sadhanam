@@ -308,8 +308,12 @@ export default async function AdminEventPage({ params, searchParams }: PageProps
               <div className="flex items-center gap-3 mt-2 text-sm text-muted-foreground flex-wrap">
                 {tournament.date && <span className="flex items-center gap-1"><Calendar className="h-3.5 w-3.5" />{formatDate(tournament.date)}</span>}
                 {tournament.location && <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{tournament.location}</span>}
-                <span className="font-medium text-foreground">{formatFormatLabel(tournament.format)}</span>
-                <span className="text-muted-foreground">{players.length} players</span>
+                {!isAnyTeamLeague && !isTeamGroupKO && (
+                  <span className="font-medium text-foreground">{formatFormatLabel(tournament.format)}</span>
+                )}
+                {!isAnyTeamLeague && !isTeamGroupKO && (
+                  <span className="text-muted-foreground">{players.length} players</span>
+                )}
               </div>
             </div>
             {/* Actions row — always visible on mobile */}

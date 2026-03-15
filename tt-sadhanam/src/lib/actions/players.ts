@@ -4,16 +4,16 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 
 // Revalidate all paths that could show this tournament's data
-async function revalidateTournament(tournamentId: string) {
-  const supabase = createClient()
-  // Look up championship_id so we can revalidate both route trees
-  const { data: t } = await supabase
-    .from('tournaments')
-    .select('championship_id')
-    .eq('id', tournamentId)
-    .single()
-
+async function revalidateTournament(tournamentId: string, champId?: string | null) {
   revalidatePath(`/admin/tournaments/${tournamentId}`)
+  if (champId) {
+    revalidatePath(`/admin/championships/${champId}/events/${tournamentId}`)
+    revalidatePath(`/championships/${champId}/events/${tournamentId}`)
+    return
+  }
+  // Fallback: look up championship_id if not provided
+  const supabase = createClient()
+  const { data: t } = await supabase.from('tournaments').select('championship_id').eq('id', tournamentId).single()
   if (t?.championship_id) {
     revalidatePath(`/admin/championships/${t.championship_id}/events/${tournamentId}`)
     revalidatePath(`/championships/${t.championship_id}/events/${tournamentId}`)
@@ -34,23 +34,15 @@ export async function addPlayer(tournamentId: string, formData: FormData): Promi
   if (!name) return { error: 'Player name is required' }
   if (name.length < 2) return { error: 'Name must be at least 2 characters' }
 
-  if (seed) {
-    const { data: existing } = await supabase
-      .from('players')
-      .select('id, name')
-      .eq('tournament_id', tournamentId)
-      .eq('seed', seed)
-      .maybeSingle()
-    if (existing) return { error: `Seed ${seed} is already assigned to ${existing.name}` }
-  }
-
-  const { data: dupName } = await supabase
-    .from('players')
-    .select('id')
-    .eq('tournament_id', tournamentId)
-    .ilike('name', name)
-    .maybeSingle()
-  if (dupName) return { error: `A player named "${name}" already exists` }
+  // Run duplicate checks in parallel
+  const [seedCheck, nameCheck] = await Promise.all([
+    seed
+      ? supabase.from('players').select('id, name').eq('tournament_id', tournamentId).eq('seed', seed).maybeSingle()
+      : Promise.resolve({ data: null }),
+    supabase.from('players').select('id').eq('tournament_id', tournamentId).ilike('name', name).maybeSingle(),
+  ])
+  if (seedCheck.data) return { error: `Seed ${seed} is already assigned to ${(seedCheck.data as {name:string}).name}` }
+  if (nameCheck.data) return { error: `A player named "${name}" already exists` }
 
   const { error } = await supabase.from('players').insert({
     tournament_id: tournamentId,

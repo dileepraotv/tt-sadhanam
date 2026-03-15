@@ -178,7 +178,7 @@ export default async function AdminChampionshipPage({ params }: PageProps) {
                 const progress   = totalCount ? Math.round((doneCount / totalCount) * 100) : 0
 
                 return (
-                  /* Link IS the card — most reliable on mobile iOS/Android */
+                  /* Link IS the card — delete button uses stopPropagation + preventDefault */
                   <Link
                     key={ev.id}
                     href={`/admin/championships/${params.cid}/events/${ev.id}`}

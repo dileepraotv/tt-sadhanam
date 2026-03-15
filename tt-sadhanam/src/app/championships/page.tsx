@@ -39,7 +39,7 @@ async function getFilterOptions() {
   const supabase = createClient()
   const { data: years }     = await supabase.from('championships').select('year').eq('published', true).not('year', 'is', null)
   const { data: locations } = await supabase.from('championships').select('location').eq('published', true).not('location', 'is', null)
-  const uniqueYears     = Array.from(new Set((years ?? []).map(r => Number(r.year)))).sort((a: number, b: number) => b - a)
+  const uniqueYears     = (Array.from(new Set((years ?? []).map(r => Number(r.year)))) as number[]).sort((a, b) => b - a)
   const uniqueLocations = Array.from(new Set((locations ?? []).map(r => r.location))).filter((l): l is string => Boolean(l)).sort()
   return { years: uniqueYears, locations: uniqueLocations }
 }

@@ -1983,7 +1983,11 @@ function KnockoutTab({ tournament, teams, koMatches, matchBase, loadData, isCorb
     }
   }, [latestRound])
 
-  const activeMatches = roundEntries.find(([r]: [number, TeamMatchRich[]]) => r === activeRound)?.[1] ?? []
+  const rawActiveMatches = roundEntries.find(([r]: [number, TeamMatchRich[]]) => r === activeRound)?.[1] ?? []
+  const activeMatches = [...rawActiveMatches].sort((a, b) => {
+    const o = (s: string) => s === 'live' ? 0 : s === 'pending' ? 1 : 2
+    return o(a.status) - o(b.status)
+  })
   const doneCount = koMatches.filter(m => m.status === 'complete').length
   const liveCount = koMatches.filter(m => m.status === 'live').length
 
