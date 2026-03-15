@@ -430,13 +430,15 @@ function InlineMatchScorer({ matchId, player1Name, player2Name }: {
   const [saving,      setSaving]   = useState(false)
   const [loading,     setLoading_] = useState(true)
   const [format,      setFormat]   = useState<'bo3'|'bo5'|'bo7'>('bo5')
+  const [p1Id,        setP1Id]     = useState<string | null>(null)
+  const [p2Id,        setP2Id]     = useState<string | null>(null)
   const sb = useRef(createClientForScorer()).current
 
   const load = useCallback(async () => {
     setLoading_(true)
     const [gRes, mRes] = await Promise.all([
       sb.from('games').select('*').eq('match_id', matchId).order('game_number'),
-      sb.from('matches').select('match_format').eq('id', matchId).single(),
+      sb.from('matches').select('match_format, player1_id, player2_id').eq('id', matchId).single(),
     ])
     const gs = gRes.data ?? []
     setGames(gs)
@@ -444,6 +446,8 @@ function InlineMatchScorer({ matchId, player1Name, player2Name }: {
     for (const g of gs) init[g.game_number] = { s1: String(g.score1 ?? ''), s2: String(g.score2 ?? '') }
     setLocal(init)
     if (mRes.data?.match_format) setFormat(mRes.data.match_format as 'bo3'|'bo5'|'bo7')
+    if (mRes.data?.player1_id)   setP1Id(mRes.data.player1_id)
+    if (mRes.data?.player2_id)   setP2Id(mRes.data.player2_id)
     setLoading_(false)
   }, [matchId])
 
@@ -480,35 +484,7 @@ function InlineMatchScorer({ matchId, player1Name, player2Name }: {
 
   return (
     <div className="flex flex-col gap-2">
-      {/* Declare winner — always visible at the top */}
-      <div className="flex items-center gap-2 pt-0.5">
-        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide shrink-0">Declare:</span>
-        <button disabled={saving} onClick={async () => {
-          setSaving(true)
-          const [{ declareMatchWinner }, mRow] = await Promise.all([
-            import('@/lib/actions/matches'),
-            sb.from('matches').select('player1_id').eq('id', matchId).single(),
-          ])
-          await declareMatchWinner(matchId, mRow.data?.player1_id ?? 'p1', 'declared')
-          setSaving(false)
-          await load()
-        }} className="flex-1 px-2 py-1.5 rounded-lg border text-xs font-semibold text-left transition-colors disabled:opacity-30 border-border hover:border-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/20">
-          🏆 {player1Name}
-        </button>
-        <button disabled={saving} onClick={async () => {
-          setSaving(true)
-          const [{ declareMatchWinner }, mRow] = await Promise.all([
-            import('@/lib/actions/matches'),
-            sb.from('matches').select('player2_id').eq('id', matchId).single(),
-          ])
-          await declareMatchWinner(matchId, mRow.data?.player2_id ?? 'p2', 'declared')
-          setSaving(false)
-          await load()
-        }} className="flex-1 px-2 py-1.5 rounded-lg border text-xs font-semibold text-left transition-colors disabled:opacity-30 border-border hover:border-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/20">
-          🏆 {player2Name}
-        </button>
-      </div>
-      <div className="border-b border-border/30" />
+
       {/* Format pills */}
       <div className="flex items-center gap-1">
         {(['bo3','bo5','bo7'] as const).map(f => (
@@ -556,10 +532,27 @@ function InlineMatchScorer({ matchId, player1Name, player2Name }: {
       </div>
       <div className="flex items-center gap-2 flex-wrap">
         <button onClick={handleSave} disabled={saving}
-          className="px-4 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold transition-colors disabled:opacity-50">
-          {saving ? 'Saving…' : 'Save Scores'}
+          className="px-4 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold transition-colors disabled:opacity-50 flex items-center gap-1.5">
+          {saving ? 'Saving…' : '✓ Save Scores'}
         </button>
-
+        <button disabled={saving || !p1Id} onClick={async () => {
+          setSaving(true)
+          const { declareMatchWinner } = await import('@/lib/actions/matches')
+          await declareMatchWinner(matchId, p1Id!, 'declared')
+          setSaving(false)
+          await load()
+        }} className="px-3 py-1.5 rounded-lg border border-border text-xs font-semibold text-muted-foreground hover:border-amber-400 hover:text-foreground transition-colors disabled:opacity-30 flex items-center gap-1">
+          🏆 {player1Name} wins
+        </button>
+        <button disabled={saving || !p2Id} onClick={async () => {
+          setSaving(true)
+          const { declareMatchWinner } = await import('@/lib/actions/matches')
+          await declareMatchWinner(matchId, p2Id!, 'declared')
+          setSaving(false)
+          await load()
+        }} className="px-3 py-1.5 rounded-lg border border-border text-xs font-semibold text-muted-foreground hover:border-amber-400 hover:text-foreground transition-colors disabled:opacity-30 flex items-center gap-1">
+          🏆 {player2Name} wins
+        </button>
       </div>
     </div>
   )
