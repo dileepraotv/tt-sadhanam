@@ -13,6 +13,7 @@
  */
 
 import { useTransition, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   Users, Shuffle, RefreshCw, Lock, AlertTriangle,
   CheckCircle2, ChevronRight, Trophy,
@@ -71,6 +72,7 @@ export function SingleRRStage({
   const [isPending, startTransition]  = useTransition()
   const [showReset,          setShowReset]          = useState(false)
   const [showForceFinalize,  setShowForceFinalize]  = useState(false)
+  const router = useRouter()
 
   const cfg   = stage?.config as RRStageConfig | undefined
   const phase = resolvePhase(tournament, stage, standings, rrMatches, allComplete)
@@ -88,6 +90,7 @@ export function SingleRRStage({
         toast({ title: 'Could not create stage', description: result.error, variant: 'destructive' })
       } else {
         toast({ title: 'Group stage created' })
+        router.refresh()
       }
     })
   }
@@ -100,6 +103,7 @@ export function SingleRRStage({
         toast({ title: 'Could not go back', description: result.error, variant: 'destructive' })
       } else {
         toast({ title: 'Back to configuration' })
+        router.refresh()
       }
     })
   }
@@ -112,6 +116,7 @@ export function SingleRRStage({
         toast({ title: 'Assignment failed', description: result.error, variant: 'destructive' })
       } else {
         toast({ title: 'Players assigned to groups' })
+        router.refresh()
       }
     })
   }
@@ -124,6 +129,7 @@ export function SingleRRStage({
         toast({ title: 'Schedule generation failed', description: result.error, variant: 'destructive' })
       } else {
         toast({ title: '🗓 Schedule generated', description: `${result.matchCount} matches created` })
+        router.refresh()
       }
     })
   }
