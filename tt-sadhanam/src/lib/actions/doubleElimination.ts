@@ -40,7 +40,7 @@ export async function generateDEBracket(
 
   const { data: t } = await supabase
     .from('tournaments')
-    .select('id, format, created_by')
+    .select('*')
     .eq('id', tournamentId)
     .eq('created_by', user.id)
     .single()

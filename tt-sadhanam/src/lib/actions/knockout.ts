@@ -185,7 +185,7 @@ export async function generateKnockoutStage(
   // Ownership check
   const { data: t } = await supabase
     .from('tournaments')
-    .select('id, format, created_by, stage1_complete, stage2_bracket_generated')
+    .select('*')
     .eq('id', tournamentId)
     .eq('created_by', user.id)
     .single()
