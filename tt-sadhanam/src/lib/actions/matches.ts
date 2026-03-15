@@ -46,6 +46,7 @@ async function loadMatchWithFormat(supabase: ReturnType<typeof createClient>, ma
       player1_id, player2_id, winner_id, status,
       next_match_id, next_slot, started_at,
       match_kind, match_format,
+      bracket_side, loser_next_match_id, loser_next_slot,
       tournament:tournaments ( id, format, status, championship_id )
     `)
     .eq('id', matchId)
@@ -62,6 +63,7 @@ async function loadMatchWithFormat(supabase: ReturnType<typeof createClient>, ma
         player1_id, player2_id, winner_id, status,
         next_match_id, next_slot, started_at,
         match_kind,
+        bracket_side, loser_next_match_id, loser_next_slot,
         tournament:tournaments ( id, format, status, championship_id )
       `)
       .eq('id', matchId)
@@ -228,13 +230,36 @@ export async function saveGameScore(
     if (propErr) console.error('[saveGameScore] propagation failed:', propErr.message)
   }
 
-  // ── 9c. If this is the KO Final, mark tournament complete ──────────────────
-  // Round-robin and team_submatch matches never advance via next_match_id.
-  if (matchWinnerId && !match.next_match_id && match.match_kind !== 'round_robin') {
-    await supabase
-      .from('tournaments')
-      .update({ status: 'complete' })
-      .eq('id', match.tournament_id)
+  // ── 9b-DE. Route loser into Losers Bracket (double-elimination only) ───────
+  const bracketSide = (match as unknown as { bracket_side?: string | null }).bracket_side
+  const loserNextMatchId = (match as unknown as { loser_next_match_id?: string | null }).loser_next_match_id
+  const loserNextSlot = (match as unknown as { loser_next_slot?: number | null }).loser_next_slot
+  if (isMatchComplete && bracketSide === 'winners' && loserNextMatchId && matchWinnerId) {
+    const loserId = match.player1_id === matchWinnerId ? match.player2_id : match.player1_id
+    if (loserId) {
+      const col = loserNextSlot === 1 ? 'player1_id' : 'player2_id'
+      const { error: lbErr } = await supabase
+        .from('matches')
+        .update({ [col]: loserId })
+        .eq('id', loserNextMatchId)
+      if (lbErr) console.error('[saveGameScore] LB routing failed:', lbErr.message)
+    }
+  }
+
+  // ── 9b-GF. Grand Final special handling ────────────────────────────────────
+  if (isMatchComplete && bracketSide === 'grand_final' && matchWinnerId) {
+    const { advanceDEPlayers } = await import('./doubleElimination')
+    await advanceDEPlayers(matchId, match.tournament_id)
+    // advanceDEPlayers handles tournament completion — skip step 9c for GF
+  } else {
+    // ── 9c. If this is the KO Final, mark tournament complete ────────────────
+    // Round-robin and team_submatch matches never advance via next_match_id.
+    if (matchWinnerId && !match.next_match_id && match.match_kind !== 'round_robin' && bracketSide !== 'grand_final') {
+      await supabase
+        .from('tournaments')
+        .update({ status: 'complete' })
+        .eq('id', match.tournament_id)
+    }
   }
 
   // ── 10. Audit log — fire and forget (non-blocking) ─────────────────────────
