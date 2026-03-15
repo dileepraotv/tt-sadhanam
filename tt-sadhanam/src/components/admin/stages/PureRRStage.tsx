@@ -12,6 +12,7 @@
  */
 
 import { useTransition, useState, useMemo, useRef, useCallback, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { RotateCcw, RefreshCw, Trophy, ChevronDown, ChevronRight } from 'lucide-react'
 import { matchStatusClasses } from '@/components/shared/MatchUI'
 import { cn } from '@/lib/utils'
@@ -37,6 +38,7 @@ interface Props {
 
 export function PureRRStage({ tournament, players, matches, games, matchBase }: Props) {
   const [isPending, startTransition] = useTransition()
+  const router = useRouter()
   const { setLoading }               = useLoading()
   const [showReset, setShowReset]    = useState(false)
   const [openRounds, setOpenRounds]  = useState<Set<number>>(new Set([1]))
@@ -74,6 +76,7 @@ export function PureRRStage({ tournament, players, matches, games, matchBase }: 
       } else {
         toast({ title: `✅ Schedule generated — ${result.matchCount} matches` })
         setOpenRounds(new Set([1]))
+        router.refresh()
       }
     })
   }
@@ -88,6 +91,7 @@ export function PureRRStage({ tournament, players, matches, games, matchBase }: 
         toast({ title: 'Reset failed', description: result.error, variant: 'destructive' })
       } else {
         toast({ title: 'League reset' })
+        router.refresh()
       }
     })
   }
