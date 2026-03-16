@@ -76,7 +76,7 @@ export function PublicMultiStageClient({
   const koLive = koMatches.some(m => m.status === 'live')
 
   return (
-    <main className="flex-1 mx-auto w-full max-w-7xl px-4 sm:px-6 py-6">
+    <main className="page-shell"><div className="page-content">
       {/* Stage status banner */}
       {stage1Complete && !hasKO && (
         <div className="mb-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 flex items-center gap-3">
@@ -142,7 +142,7 @@ export function PublicMultiStageClient({
           />
         </div>
       )}
-    </main>
+    </div></main>
   )
 }
 
@@ -363,80 +363,81 @@ function PublicFixtureRow({ match: m }: { match: Match }) {
   const isLive     = m.status === 'live'
   const p1Won      = isComplete && m.winner_id === m.player1_id
   const p2Won      = isComplete && m.winner_id === m.player2_id
-  const p1         = m.player1?.name ?? 'TBD'
-  const p2         = m.player2?.name ?? 'TBD'
 
   const games = m.games
-    ? [...m.games].sort((a, b) => a.game_number - b.game_number)
+    ? [...m.games].sort((a, b) => a.game_number - b.game_number).filter(g => g.score1 != null)
     : []
+  const isDeclared = isComplete && games.length === 0
 
   return (
     <div className={cn(
-      'flex flex-col rounded-lg border text-sm',
+      'rounded-lg border text-sm',
       isComplete && 'bg-slate-100/80 dark:bg-slate-800/40 border-border/40',
       isLive     && 'border-orange-400/70 bg-orange-50/50 dark:bg-orange-950/15 shadow-sm',
       !isComplete && !isLive && 'bg-card border-border',
     )}>
-      {/* Main match row */}
-      <div className="flex items-center gap-2 px-3 py-2.5">
-        <span className={cn(
-          'shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide',
-          isComplete && 'bg-muted text-muted-foreground',
-          isLive     && 'bg-orange-500 text-white',
-          !isComplete && !isLive && 'bg-muted text-muted-foreground',
-        )}>
-          {isLive ? 'LIVE' : isComplete ? 'Done' : 'vs'}
-        </span>
-
-        {/* Player 1 — trophy BEFORE name (matches admin RRGroupView) */}
+      <div className="px-3 py-2">
+        {/* Player 1 row */}
         <div className={cn(
-          'flex items-center gap-1 flex-1 min-w-0 truncate font-medium',
-          p1Won && 'font-bold text-foreground',
-          p2Won && 'text-muted-foreground',
+          'flex items-center gap-2 py-1 px-1 rounded',
+          p1Won && 'border border-blue-900/35 bg-blue-950/5 dark:bg-blue-900/10',
         )}>
           <WinnerTrophy show={p1Won} size="sm" />
-          <span className="truncate">{p1}</span>
+          <span className={cn(
+            'flex-1 min-w-0 truncate',
+            p1Won ? 'font-bold text-foreground' : p2Won ? 'font-normal text-muted-foreground' : 'font-medium text-foreground',
+          )}>{m.player1?.name ?? 'TBD'}</span>
+          {(isComplete || isLive) && (
+            <span className={cn(
+              'font-mono font-bold tabular-nums w-5 text-right shrink-0',
+              p1Won ? 'text-foreground' : 'text-muted-foreground/50',
+            )}>{m.player1_games}</span>
+          )}
         </div>
 
-        {/* Score */}
-        {(isComplete || isLive) ? (
-          <span className="shrink-0 font-mono text-sm text-center w-10 font-semibold tabular-nums">
-            {m.player1_games}–{m.player2_games}
-          </span>
-        ) : (
-          <span className="shrink-0 text-muted-foreground text-xs mx-1 w-6 text-center">vs</span>
-        )}
+        {/* Divider */}
+        <div className="border-b border-border/30 mx-1 my-0.5" />
 
-        {/* Player 2 — trophy AFTER name (matches admin RRGroupView) */}
+        {/* Player 2 row */}
         <div className={cn(
-          'flex items-center gap-1 flex-1 min-w-0 truncate font-medium justify-end',
-          p2Won && 'font-bold text-foreground',
-          p1Won && 'text-muted-foreground',
+          'flex items-center gap-2 py-1 px-1 rounded',
+          p2Won && 'border border-blue-900/35 bg-blue-950/5 dark:bg-blue-900/10',
         )}>
-          <span className="truncate">{p2}</span>
           <WinnerTrophy show={p2Won} size="sm" />
+          <span className={cn(
+            'flex-1 min-w-0 truncate',
+            p2Won ? 'font-bold text-foreground' : p1Won ? 'font-normal text-muted-foreground' : 'font-medium text-foreground',
+          )}>{m.player2?.name ?? 'TBD'}</span>
+          {(isComplete || isLive) && (
+            <span className={cn(
+              'font-mono font-bold tabular-nums w-5 text-right shrink-0',
+              p2Won ? 'text-foreground' : 'text-muted-foreground/50',
+            )}>{m.player2_games}</span>
+          )}
         </div>
       </div>
 
-      {/* Set scores — shown below for completed/live matches */}
-      {games.length > 0 && (isComplete || isLive) && (
-        <div className="flex gap-1 mt-1.5 pl-11 flex-wrap">
+      {/* Game chips at bottom */}
+      {games.length > 0 && (
+        <div className="flex gap-1 px-3 pb-2 flex-wrap border-t border-border/20 pt-1.5">
           {games.map((g, i) => {
             const p1WonGame = g.winner_id === m.player1_id
             return (
-              <span
-                key={g.id ?? i}
-                className={cn(
-                  'text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded border tabular-nums',
-                  p1WonGame
-                    ? 'bg-orange-100 border-orange-200/80 text-orange-700 dark:bg-orange-950/40 dark:border-orange-800 dark:text-orange-400'
-                    : 'bg-muted/40 border-border/30 text-muted-foreground',
-                )}
-              >
+              <span key={g.id ?? i} className={cn(
+                'text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded border tabular-nums',
+                p1WonGame
+                  ? 'bg-orange-100 border-orange-200/80 text-orange-700 dark:bg-orange-950/40 dark:border-orange-800 dark:text-orange-400'
+                  : 'bg-muted/40 border-border/30 text-muted-foreground',
+              )}>
                 {g.score1}–{g.score2}
               </span>
             )
           })}
+        </div>
+      )}
+      {isDeclared && (
+        <div className="px-3 pb-2 border-t border-border/20 pt-1.5">
+          <span className="text-[10px] text-muted-foreground/60 italic">Admin-declared result</span>
         </div>
       )}
     </div>

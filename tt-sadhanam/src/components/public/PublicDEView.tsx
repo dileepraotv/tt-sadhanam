@@ -53,7 +53,7 @@ export function PublicDEView({ tournament, matches: initialMatches }: Props) {
   }
 
   return (
-    <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6">
+    <div className="page-content">
       <DoubleEliminationView
         wbMatches={wbMatches}
         lbMatches={lbMatches}

@@ -3,16 +3,12 @@
 /**
  * PublicMatchCard
  *
- * Compact, clickable card for public audience pages.
- * Used by the public RR/KO/multi-stage bracket views.
- *
- * Design rules (from MatchUI canonical tokens):
- *   - Winner: WINNER_NAME_CLS / WINNER_SCORE_CLS (emerald — same as admin card)
- *   - Loser:  LOSER_NAME_CLS  / LOSER_SCORE_CLS  (muted)
- *   - Complete: grey card bg (bg-slate-100) — full readability, no opacity
- *   - Live:  orange border + bg tint + LiveBadge (matches admin card)
- *   - Trophy: <WinnerTrophy /> component (never emoji — cross-platform issue)
- *   - Status pill: <MatchStatusBadge /> shared component
+ * Design rules:
+ *   - Complete: grey bg, winner row has dark-navy pill border
+ *   - Live:     orange border + tint + LiveBadge
+ *   - Pending:  white bg-card, visible border
+ *   - Scores:   games shown at BOTTOM only (not inline per-player)
+ *   - Declared: "Admin-declared result" note when no game chips
  */
 
 import { cn }         from '@/lib/utils'
@@ -24,6 +20,7 @@ import {
   WINNER_SCORE_CLS,
   LOSER_NAME_CLS,
   LOSER_SCORE_CLS,
+  WINNER_ROW_CLS,
   GAME_CHIP_WIN_CLS,
   GAME_CHIP_LOSS_CLS,
 } from '@/components/shared/MatchUI'
@@ -45,10 +42,11 @@ export function PublicMatchCard({ match, onMatchClick, compact = false, groupNam
   const p2Won = isComplete && match.winner_id === match.player2_id
 
   const games: Game[] = match.games
-    ? [...match.games].sort((a, b) => a.game_number - b.game_number)
+    ? [...match.games].sort((a, b) => a.game_number - b.game_number).filter(g => g.score1 != null)
     : []
 
-  const showChips = games.length > 0 && (isLive || isComplete)
+  const showChips  = games.length > 0 && (isLive || isComplete)
+  const isDeclared = isComplete && games.length === 0
 
   return (
     <div
@@ -60,21 +58,16 @@ export function PublicMatchCard({ match, onMatchClick, compact = false, groupNam
       }}
       className={cn(
         'relative rounded-xl border transition-all duration-150 overflow-hidden select-none',
-        // Live: orange border + bg tint (matches admin MatchCard)
-        isLive     && 'border-orange-400/70 bg-orange-50/30 dark:bg-orange-950/10 shadow-sm shadow-orange-200/40 dark:shadow-orange-900/20',
-        // Complete: grey background (no opacity — ensures full text readability)
+        isLive     && 'border-orange-400/70 bg-orange-50/30 dark:bg-orange-950/10 shadow-sm shadow-orange-200/40',
         isComplete && 'border-border/40 bg-slate-100/80 dark:bg-slate-800/40',
-        // Pending
-        match.status === 'pending' && 'border-border/40 bg-card',
-        // Bye
+        match.status === 'pending' && 'border-border bg-card',
         isBye      && 'border-border/20 bg-muted/10',
-        isClickable && 'cursor-pointer hover:border-orange-400 hover:shadow-md hover:shadow-orange-100/40 active:scale-[0.99]',
-        compact ? 'px-3 py-2' : 'px-4 py-3',
+        isClickable && 'cursor-pointer hover:border-orange-400 hover:shadow-md active:scale-[0.99]',
       )}
     >
       {/* Top row: status badge + round/group label */}
       {!compact && (
-        <div className="flex items-center justify-between mb-2.5">
+        <div className="flex items-center justify-between px-4 pt-3 pb-2 gap-2">
           <MatchStatusBadge status={match.status} />
           <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">
             {groupName
@@ -86,27 +79,25 @@ export function PublicMatchCard({ match, onMatchClick, compact = false, groupNam
       )}
 
       {/* Players */}
-      <div className="flex flex-col gap-0.5">
+      <div className={cn('flex flex-col gap-0', compact ? 'px-3 py-2' : 'px-4 pb-3')}>
         <PlayerRow
           player={match.player1} gamesWon={match.player1_games}
           isWinner={p1Won} isLoser={p2Won}
           showScore={isLive || isComplete}
-          games={games} slot={1} playerId={match.player1_id}
           compact={compact}
         />
-        <div className="border-b border-border/30 my-0.5" />
+        <div className="border-b border-border/30 mx-1" />
         <PlayerRow
           player={match.player2} gamesWon={match.player2_games}
           isWinner={p2Won} isLoser={p1Won}
           showScore={isLive || isComplete}
-          games={games} slot={2} playerId={match.player2_id}
           compact={compact}
         />
       </div>
 
-      {/* Per-game chips */}
+      {/* Game chips — bottom of card only */}
       {showChips && !compact && (
-        <div className="mt-2.5 flex flex-wrap gap-1">
+        <div className="px-4 pb-3 pt-1 flex flex-wrap gap-1 border-t border-border/20">
           {games.map(g => {
             const p1Wins = g.winner_id === match.player1_id
             return (
@@ -129,6 +120,13 @@ export function PublicMatchCard({ match, onMatchClick, compact = false, groupNam
         </div>
       )}
 
+      {/* Declared win note */}
+      {isDeclared && !compact && (
+        <div className="px-4 pb-2.5 pt-1 border-t border-border/20">
+          <span className="text-[10px] text-muted-foreground/60 italic">Admin-declared result</span>
+        </div>
+      )}
+
       {/* Live pulse bar */}
       {isLive && (
         <div
@@ -146,25 +144,22 @@ export function PublicMatchCard({ match, onMatchClick, compact = false, groupNam
 // ── PlayerRow ──────────────────────────────────────────────────────────────────
 
 function PlayerRow({
-  player, gamesWon, isWinner, isLoser, showScore, games, slot, playerId, compact,
+  player, gamesWon, isWinner, isLoser, showScore, compact,
 }: {
   player:    Match['player1'] | null
   gamesWon:  number
   isWinner:  boolean
   isLoser:   boolean
   showScore: boolean
-  games:     Game[]
-  slot:      1 | 2
-  playerId:  string | null
   compact:   boolean
 }) {
   return (
     <div className={cn(
-      'flex items-center justify-between gap-2',
+      'flex items-center justify-between gap-2 px-1',
       compact ? 'py-1' : 'py-1.5',
+      isWinner && WINNER_ROW_CLS,
     )}>
       <div className="flex items-center gap-1.5 min-w-0 flex-1">
-        {/* WinnerTrophy replaces 🏆 emoji — consistent Lucide icon, fixed width */}
         <WinnerTrophy show={isWinner} size="md" />
         {player?.seed != null && (
           <span className="seed-badge shrink-0 text-[10px]">{player.seed}</span>
@@ -181,35 +176,17 @@ function PlayerRow({
         </span>
       </div>
 
-      <div className="flex items-center gap-1.5 shrink-0">
-        {compact && games.map(g => {
-          const score = slot === 1 ? g.score1 : g.score2
-          const won   = g.winner_id === playerId
-          if (score === null) return null
-          return (
-            <span
-              key={g.id}
-              className={cn(
-                'text-xs font-mono tabular-nums w-5 text-center',
-                won ? 'font-bold text-orange-600 dark:text-orange-400' : 'text-muted-foreground',
-              )}
-            >
-              {score}
-            </span>
-          )
-        })}
-        {showScore && (
-          <span className={cn(
-            'tabular-nums',
-            compact ? 'text-sm w-4 text-center' : 'text-base w-5 text-center',
-            isWinner ? WINNER_SCORE_CLS :
-            isLoser  ? LOSER_SCORE_CLS  :
-                       'font-semibold text-muted-foreground/60',
-          )}>
-            {gamesWon}
-          </span>
-        )}
-      </div>
+      {showScore && (
+        <span className={cn(
+          'tabular-nums shrink-0',
+          compact ? 'text-sm w-4 text-center' : 'text-base w-5 text-center',
+          isWinner ? WINNER_SCORE_CLS :
+          isLoser  ? LOSER_SCORE_CLS  :
+                     'font-semibold text-muted-foreground/60',
+        )}>
+          {gamesWon}
+        </span>
+      )}
     </div>
   )
 }

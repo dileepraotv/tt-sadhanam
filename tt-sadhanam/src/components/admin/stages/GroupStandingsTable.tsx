@@ -16,6 +16,15 @@ import { cn } from '@/lib/utils'
 import type { Match } from '@/lib/types'
 import type { GroupStandings } from '@/lib/roundrobin/types'
 
+// Inline winner trophy (avoids importing full WinnerTrophy to keep bundle lean)
+function WinnerTrophyInline({ show }: { show: boolean }) {
+  return (
+    <span className="inline-flex items-center justify-center shrink-0 w-4" style={{ opacity: show ? 1 : 0 }}>
+      <svg className="h-3 w-3 text-amber-500 fill-current" viewBox="0 0 24 24"><path d="M12 2C9.79 2 8 3.79 8 6v2H6c-1.1 0-2 .9-2 2v2c0 2.97 2.13 5.44 5 5.9V20H7v2h10v-2h-2v-2.1c2.87-.46 5-2.93 5-5.9V10c0-1.1-.9-2-2-2h-2V6c0-2.21-1.79-4-4-4zm0 2c1.1 0 2 .9 2 2v2h-4V6c0-1.1.9-2 2-2zm6 6v2c0 2.21-1.79 4-4 4h-4c-2.21 0-4-1.79-4-4v-2h12z"/></svg>
+    </span>
+  )
+}
+
 interface Props {
   standings:      GroupStandings[]
   allMatches:     Match[]
@@ -293,6 +302,8 @@ function FixtureRow({ match: m, matchBase, isAdmin }: {
   const p2Won      = isComplete && m.winner_id === m.player2_id
   const games      = m.games ? [...m.games].sort((a, b) => a.game_number - b.game_number) : []
 
+  const isDeclared = isComplete && games.length === 0
+
   return (
     <div className={cn(
       'rounded-xl border overflow-hidden transition-all',
@@ -304,10 +315,12 @@ function FixtureRow({ match: m, matchBase, isAdmin }: {
       {/* Two-line player rows */}
       <div className="px-3 py-2">
         {/* Player 1 row */}
-        <div className="flex items-center gap-2 py-1">
+        <div className={cn(
+          'flex items-center gap-2 py-1 px-1 rounded',
+          p1Won && 'border border-blue-900/35 bg-blue-950/5 dark:bg-blue-900/10 dark:border-blue-700/40',
+        )}>
           <div className="flex items-center gap-1.5 flex-1 min-w-0">
-            {p1Won && <span className="text-amber-500 text-sm shrink-0">🏆</span>}
-            {!p1Won && <span className="w-4 shrink-0" />}
+            <WinnerTrophyInline show={p1Won} />
             <span className={cn(
               'truncate text-sm',
               p1Won ? 'font-bold text-foreground' : isComplete ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground',
@@ -315,40 +328,21 @@ function FixtureRow({ match: m, matchBase, isAdmin }: {
               {p1?.name ?? <span className="italic text-muted-foreground/50">TBD</span>}
             </span>
           </div>
-          {/* Per-game scores for P1 */}
-          {(isComplete || isLive) && games.length > 0 && (
-            <div className="flex items-center gap-0.5 shrink-0">
-              {games.map((g, i) => {
-                const score = g.score1
-                const won   = g.winner_id === m.player1_id
-                return (
-                  <span key={i} className={cn(
-                    'text-xs font-mono tabular-nums w-6 text-center rounded',
-                    won ? 'font-bold text-orange-600 dark:text-orange-400' : 'text-muted-foreground/50',
-                  )}>
-                    {score ?? '–'}
-                  </span>
-                )
-              })}
-            </div>
-          )}
-          {/* Sets won */}
           {(isComplete || isLive) && (
             <span className={cn(
               'font-bold tabular-nums text-sm shrink-0 w-5 text-right',
-              p1Won ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/50',
+              p1Won ? 'font-bold text-foreground' : 'text-muted-foreground/50',
             )}>
               {m.player1_games}
             </span>
           )}
-          {/* Score/Edit button (only on P1 row to avoid duplication) */}
           {isAdmin && !isBye && (
             <button
               onClick={e => { e.stopPropagation(); setExpanded(v => !v) }}
               className={cn(
                 'text-[11px] font-semibold px-2 py-0.5 rounded-md border transition-colors whitespace-nowrap ml-1',
                 isComplete
-                  ? 'text-emerald-600 border-emerald-200 dark:border-emerald-800/40 hover:bg-emerald-50 dark:hover:bg-emerald-950/30'
+                  ? 'text-slate-600 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
                   : 'text-orange-500 border-orange-200 dark:border-orange-800/40 hover:bg-orange-50 dark:hover:bg-orange-950/30',
               )}
             >
@@ -358,13 +352,15 @@ function FixtureRow({ match: m, matchBase, isAdmin }: {
         </div>
 
         {/* Divider */}
-        <div className="border-b border-border/30 ml-6" />
+        <div className="border-b border-border/30 mx-1 my-0.5" />
 
         {/* Player 2 row */}
-        <div className="flex items-center gap-2 py-1">
+        <div className={cn(
+          'flex items-center gap-2 py-1 px-1 rounded',
+          p2Won && 'border border-blue-900/35 bg-blue-950/5 dark:bg-blue-900/10 dark:border-blue-700/40',
+        )}>
           <div className="flex items-center gap-1.5 flex-1 min-w-0">
-            {p2Won && <span className="text-amber-500 text-sm shrink-0">🏆</span>}
-            {!p2Won && <span className="w-4 shrink-0" />}
+            <WinnerTrophyInline show={p2Won} />
             <span className={cn(
               'truncate text-sm',
               p2Won ? 'font-bold text-foreground' : isComplete ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground',
@@ -372,36 +368,43 @@ function FixtureRow({ match: m, matchBase, isAdmin }: {
               {p2?.name ?? <span className="italic text-muted-foreground/50">TBD</span>}
             </span>
           </div>
-          {/* Per-game scores for P2 */}
-          {(isComplete || isLive) && games.length > 0 && (
-            <div className="flex items-center gap-0.5 shrink-0">
-              {games.map((g, i) => {
-                const score = g.score2
-                const won   = g.winner_id === m.player2_id
-                return (
-                  <span key={i} className={cn(
-                    'text-xs font-mono tabular-nums w-6 text-center rounded',
-                    won ? 'font-bold text-orange-600 dark:text-orange-400' : 'text-muted-foreground/50',
-                  )}>
-                    {score ?? '–'}
-                  </span>
-                )
-              })}
-            </div>
-          )}
-          {/* Sets won */}
           {(isComplete || isLive) && (
             <span className={cn(
               'font-bold tabular-nums text-sm shrink-0 w-5 text-right',
-              p2Won ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/50',
+              p2Won ? 'font-bold text-foreground' : 'text-muted-foreground/50',
             )}>
               {m.player2_games}
             </span>
           )}
-          {/* Spacer to align with Score button above */}
           {isAdmin && !isBye && <span className="w-[42px] ml-1 shrink-0" />}
         </div>
       </div>
+
+      {/* Game chips — bottom of card */}
+      {(isComplete || isLive) && games.length > 0 && (
+        <div className="px-3 pb-2 pt-1 flex flex-wrap gap-1 border-t border-border/20">
+          {games.map((g, i) => {
+            const p1WonGame = g.winner_id === m.player1_id
+            return (
+              <span key={i} className={cn(
+                'text-[11px] font-mono tabular-nums px-1.5 py-0.5 rounded-md border',
+                p1WonGame
+                  ? 'text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/30 border-orange-200 dark:border-orange-800/40'
+                  : 'text-muted-foreground bg-muted/60 border-border/40',
+              )}>
+                {g.score1}–{g.score2}
+              </span>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Declared win note */}
+      {isDeclared && (
+        <div className="px-3 pb-2 pt-1 border-t border-border/20">
+          <span className="text-[10px] text-muted-foreground/60 italic">Admin-declared result</span>
+        </div>
+      )}
 
       {/* Live pulse bar */}
       {isLive && <div className="h-0.5 bg-gradient-to-r from-orange-400/0 via-orange-500 to-orange-400/0 animate-pulse" />}

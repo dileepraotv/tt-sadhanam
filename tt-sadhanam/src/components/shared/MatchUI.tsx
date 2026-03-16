@@ -3,25 +3,23 @@
 /**
  * MatchUI — shared primitives used across all event types (admin + public).
  *
- * ── Canonical design tokens ───────────────────────────────────────────────────
- * WINNER_NAME_CLS / WINNER_SCORE_CLS  — emerald, used universally for winner
- * LOSER_NAME_CLS  / LOSER_SCORE_CLS   — muted, used universally for loser
- * GAME_CHIP_WIN_CLS / GAME_CHIP_LOSS_CLS — orange game chips (won) / muted (lost)
+ * Design tokens:
+ *   WINNER_NAME_CLS / WINNER_SCORE_CLS  — bold dark foreground for winner
+ *   LOSER_NAME_CLS  / LOSER_SCORE_CLS   — muted, used universally for loser
+ *   WINNER_ROW_CLS                       — dark-navy pill border for winner row
+ *   GAME_CHIP_WIN_CLS / GAME_CHIP_LOSS_CLS — orange game chips (won) / muted (lost)
  *
- * Rule: Orange = LIVE/ACTIVE only. Emerald = WINNER/COMPLETE.
- * Never use orange to color a winner's name or sets-won count.
+ * Rule: Orange = LIVE/ACTIVE only. Dark navy border pill = WINNER.
  *
  * WinnerTrophy   — always reserves the same fixed width so player names
- *                  never shift when a winner is or isn't shown. Use it
- *                  everywhere. NEVER use the 🏆 emoji — cross-platform rendering
- *                  is inconsistent.
+ *                  never shift. Use everywhere, never use 🏆 emoji.
  *
- * matchStatusClasses — returns consistent Tailwind classes for the outer
- *                  wrapper of any match/fixture card depending on status.
+ * matchStatusClasses — card wrapper classes per match status.
+ *   ongoing/pending = white bg-card
+ *   complete        = grey bg-slate-100/80
+ *   live            = orange border + tint
  *
- * MatchStatusBadge — single pill badge (LIVE / ✓ Done / vs) used everywhere.
- *                    Replaces inline spans in MatchCard, TeamMatchCard,
- *                    and the private StatusPill in PublicMatchCard.
+ * MatchStatusBadge — shared status pill (LIVE / ✓ Done / vs).
  */
 
 import { Trophy } from 'lucide-react'
@@ -30,34 +28,32 @@ import { LiveBadge } from '@/components/shared/LiveBadge'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Canonical color tokens
-// Import these instead of hardcoding class strings in individual components.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Winning player NAME text — emerald. */
-export const WINNER_NAME_CLS  = 'font-bold text-emerald-600 dark:text-emerald-400'
-/** Winning player SETS WON count — emerald monospaced. */
-export const WINNER_SCORE_CLS = 'font-bold tabular-nums text-emerald-600 dark:text-emerald-400'
-/** Losing player name text — muted. */
+/** Winner NAME text — bold dark foreground. */
+export const WINNER_NAME_CLS  = 'font-bold text-foreground'
+/** Winner SETS WON count — bold dark mono. */
+export const WINNER_SCORE_CLS = 'font-bold tabular-nums text-foreground'
+/** Loser name — muted. */
 export const LOSER_NAME_CLS   = 'font-normal text-muted-foreground'
-/** Losing player sets-won count — muted. */
+/** Loser sets-won — muted. */
 export const LOSER_SCORE_CLS  = 'tabular-nums text-muted-foreground/50'
-/** Game chip — this player won that game. Orange accent (active/scored). */
+/** Winner row pill — dark navy border + subtle tint. Apply to winner's row wrapper. */
+export const WINNER_ROW_CLS   = 'rounded-md border border-blue-900/35 bg-blue-950/5 dark:bg-blue-900/10 dark:border-blue-700/40'
+/** Game chip — won that game. Orange accent. */
 export const GAME_CHIP_WIN_CLS =
   'text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/30 border-orange-200 dark:border-orange-800/40'
-/** Game chip — this player lost that game. Muted. */
+/** Game chip — lost that game. Muted. */
 export const GAME_CHIP_LOSS_CLS = 'text-muted-foreground bg-muted/60 border-border/40'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // WinnerTrophy
-// Always occupies TROPHY_W px whether visible or not, so sibling names align.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Fixed pixel width reserved for the trophy icon in every player row */
 export const TROPHY_W = 18
 
 interface WinnerTrophyProps {
   show:     boolean
-  /** 'sm' = 12px (compact), 'md' = 14px (standard, default), 'lg' = 16px */
   size?:    'sm' | 'md' | 'lg'
   className?: string
 }
@@ -78,18 +74,10 @@ export function WinnerTrophy({ show, size = 'md', className }: WinnerTrophyProps
 
 // ─────────────────────────────────────────────────────────────────────────────
 // matchStatusClasses
-// Consistent card background / border for pending | live | complete matches.
 // ─────────────────────────────────────────────────────────────────────────────
 
 type MatchStatus = 'pending' | 'live' | 'complete' | 'bye' | string
 
-/**
- * Returns className strings for the card wrapper div.
- *
- * `variant` controls which palette is used:
- *  - 'card'   : cards with borders (default) — most schedule/fixture rows
- *  - 'subtle' : very lightly tinted, no hard border change — used in table rows
- */
 export function matchStatusClasses(
   status: MatchStatus,
   variant: 'card' | 'subtle' = 'card',
@@ -111,7 +99,6 @@ export function matchStatusClasses(
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MatchStatusBadge
-// Small pill used in fixture rows and match headers.
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface BadgeProps {
@@ -119,19 +106,6 @@ interface BadgeProps {
   className?: string
 }
 
-/**
- * MatchStatusBadge — canonical status pill for all match cards.
- *
- * live     → <LiveBadge />          (orange border, pulsing dot)
- * complete → "✓ Done" emerald       (matches WinnerTrophy color)
- * bye      → "BYE" muted
- * pending  → "vs" muted/60
- *
- * This replaces:
- *   - The inline <span> in MatchCard.tsx ("✓ Done" / "BYE")
- *   - The private StatusPill in PublicMatchCard.tsx
- *   - The inline "Done" text in TeamMatchCard.tsx
- */
 export function MatchStatusBadge({ status, className }: BadgeProps) {
   const isComplete = status === 'complete'
   const isLive     = status === 'live'
@@ -142,7 +116,7 @@ export function MatchStatusBadge({ status, className }: BadgeProps) {
   return (
     <span className={cn(
       'shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wider',
-      isComplete && 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20',
+      isComplete && 'text-slate-700 dark:text-slate-300 bg-slate-200/60 dark:bg-slate-700/50',
       isBye      && 'bg-muted text-muted-foreground/70',
       !isComplete && !isBye && 'bg-muted text-muted-foreground/60',
       className,
@@ -153,33 +127,18 @@ export function MatchStatusBadge({ status, className }: BadgeProps) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Shared typography + layout tokens
-// Use these across all event types for consistent sizing.
+// Shared typography tokens
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Consistent class sets for recurring UI elements.
- * Import and use in any stage/bracket/public component.
- */
 export const T = {
-  /** Group/Round heading — e.g. "Group 1", "Round of 16", "Semi-Final" */
   roundHeading: 'text-xs font-bold text-muted-foreground uppercase tracking-wider',
-  /** Match heading — team name or player name in a fixture card header */
   matchName:    'text-sm font-semibold truncate',
-  /** Match name — winning side */
-  matchNameWin: 'text-sm font-semibold truncate text-emerald-600 dark:text-emerald-400',
-  /** Match name — losing side */
+  matchNameWin: 'text-sm font-semibold truncate text-foreground',
   matchNameLoss: 'text-sm truncate text-muted-foreground font-normal',
-  /** Score display — large centered score */
   score:        'font-mono font-bold tabular-nums text-base',
-  /** Score display — muted (not yet played) */
   scoreMuted:   'font-mono font-bold tabular-nums text-base text-muted-foreground/60',
-  /** Sub-match label — "Singles 1 (A vs X)" etc. */
   subLabel:     'text-xs font-semibold text-foreground/80',
-  /** Player name in sub-match row */
   playerName:   'text-sm truncate',
-  /** Rubber/game score inline — "3-1" */
   rubberScore:  'text-xs font-semibold font-mono tabular-nums',
-  /** Section title inside expanded fixture */
   sectionTitle: 'text-xs font-bold text-muted-foreground uppercase tracking-wide',
 } as const

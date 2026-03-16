@@ -1,32 +1,22 @@
 'use client'
 
 /**
- * TeamMatchCard
+ * TeamMatchCard — public-facing team match fixture card.
  *
- * Public-facing card for a team match fixture.
- *
- * Shows:
- *   - Team A vs Team B names with colour chips
- *   - Aggregate score (team_a_score – team_b_score)
- *   - Status indicator (live dot / Done badge)
- *   - Expandable submatch list (5 individual matches)
- *   - Per-submatch game scores if available
- *
- * Used by the public championship event page and standalone tournament page
- * for format_type = 'team_league'.
+ * Winner score = bold dark foreground. Loser score = muted.
+ * Winner row gets dark-navy pill border.
+ * Winner name = bold dark. Loser name = muted normal.
  */
 
 import { useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { TeamMatch, TeamMatchSubmatch, Match } from '@/lib/types'
-import { LiveBadge } from '@/components/shared/LiveBadge'
-import { MatchStatusBadge } from '@/components/shared/MatchUI'
+import { MatchStatusBadge, WINNER_ROW_CLS } from '@/components/shared/MatchUI'
 
 interface Props {
-  teamMatch:    TeamMatch
-  /** If supplied, each submatch shows its game scores inline. */
-  subMatchScores?: Map<string, Match>  // match_id → scoring Match row
+  teamMatch:       TeamMatch
+  subMatchScores?: Map<string, Match>
 }
 
 export function TeamMatchCard({ teamMatch, subMatchScores }: Props) {
@@ -57,60 +47,73 @@ export function TeamMatchCard({ teamMatch, subMatchScores }: Props) {
       {/* Header row — click to expand */}
       <button
         onClick={() => setExpanded(o => !o)}
-        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors text-left"
+        className="w-full px-4 py-3 hover:bg-muted/20 transition-colors text-left"
       >
-        {/* Expand chevron */}
-        <span className="shrink-0 text-muted-foreground">
-          {expanded
-            ? <ChevronDown className="h-4 w-4" />
-            : <ChevronRight className="h-4 w-4" />
-          }
-        </span>
-
-        {/* Team A */}
-        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+        {/* Team A row */}
+        <div className={cn(
+          'flex items-center gap-2 px-1 py-0.5 rounded',
+          aWon && WINNER_ROW_CLS,
+        )}>
           {teamA?.color && (
-            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: teamA.color }} />
+            <span className="w-2.5 h-2.5 rounded-full shrink-0 ml-0.5" style={{ background: teamA.color }} />
           )}
           <span className={cn(
-            'font-semibold text-sm truncate',
-            aWon ? 'font-bold text-emerald-700 dark:text-emerald-400' : 'text-foreground',
-            bWon && 'font-normal text-muted-foreground',
+            'text-sm flex-1 min-w-0 truncate',
+            aWon ? 'font-bold text-foreground' :
+            bWon ? 'font-normal text-muted-foreground' :
+                   'font-semibold text-foreground',
           )}>
             {teamA?.short_name ?? teamA?.name ?? '?'}
           </span>
-        </div>
-
-        {/* Score */}
-        <div className="flex items-center gap-2 shrink-0">
-          <MatchStatusBadge status={teamMatch.status} />
           <span className={cn(
-            'font-mono font-bold text-lg tabular-nums',
-            aWon ? 'text-emerald-700 dark:text-emerald-400' : 'text-foreground',
+            'font-mono font-bold text-base tabular-nums shrink-0',
+            aWon ? 'text-foreground' :
+            bWon ? 'text-muted-foreground/50' :
+                   'text-muted-foreground/70',
           )}>
             {aScore}
           </span>
-          <span className="text-muted-foreground text-sm">–</span>
+        </div>
+
+        {/* Divider + status */}
+        <div className="flex items-center gap-2 my-1.5 ml-1">
+          <div className="flex-1 border-t border-border/30" />
+          <MatchStatusBadge status={teamMatch.status} />
+          <div className="flex-1 border-t border-border/30" />
+        </div>
+
+        {/* Team B row */}
+        <div className={cn(
+          'flex items-center gap-2 px-1 py-0.5 rounded',
+          bWon && WINNER_ROW_CLS,
+        )}>
+          {teamB?.color && (
+            <span className="w-2.5 h-2.5 rounded-full shrink-0 ml-0.5" style={{ background: teamB.color }} />
+          )}
           <span className={cn(
-            'font-mono font-bold text-lg tabular-nums',
-            bWon ? 'text-emerald-700 dark:text-emerald-400' : 'text-foreground',
+            'text-sm flex-1 min-w-0 truncate',
+            bWon ? 'font-bold text-foreground' :
+            aWon ? 'font-normal text-muted-foreground' :
+                   'font-semibold text-foreground',
+          )}>
+            {teamB?.short_name ?? teamB?.name ?? '?'}
+          </span>
+          <span className={cn(
+            'font-mono font-bold text-base tabular-nums shrink-0',
+            bWon ? 'text-foreground' :
+            aWon ? 'text-muted-foreground/50' :
+                   'text-muted-foreground/70',
           )}>
             {bScore}
           </span>
         </div>
 
-        {/* Team B */}
-        <div className="flex items-center gap-1.5 flex-1 min-w-0 justify-end">
-          <span className={cn(
-            'font-semibold text-sm truncate text-right',
-            bWon ? 'font-bold text-emerald-700 dark:text-emerald-400' : 'text-foreground',
-            aWon && 'font-normal text-muted-foreground',
-          )}>
-            {teamB?.short_name ?? teamB?.name ?? '?'}
-          </span>
-          {teamB?.color && (
-            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: teamB.color }} />
-          )}
+        {/* Expand hint */}
+        <div className="flex items-center justify-end mt-1.5">
+          {expanded
+            ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+          }
         </div>
       </button>
 
@@ -121,11 +124,10 @@ export function TeamMatchCard({ teamMatch, subMatchScores }: Props) {
             const scoringMatch = sm.match_id ? subMatchScores?.get(sm.match_id) : null
             const smDone  = scoringMatch?.status === 'complete'
             const smLive  = scoringMatch?.status === 'live'
-            // winner_id is null for team_submatches — use game counts instead
-            const smP1Games = scoringMatch?.player1_games ?? 0
-            const smP2Games = scoringMatch?.player2_games ?? 0
-            const smAWon  = smDone && smP1Games > smP2Games
-            const smBWon  = smDone && smP2Games > smP1Games
+            const smP1G   = scoringMatch?.player1_games ?? 0
+            const smP2G   = scoringMatch?.player2_games ?? 0
+            const smAWon  = smDone && smP1G > smP2G
+            const smBWon  = smDone && smP2G > smP1G
 
             return (
               <div
@@ -143,39 +145,41 @@ export function TeamMatchCard({ teamMatch, subMatchScores }: Props) {
                 {/* Player A */}
                 <span className={cn(
                   'text-xs flex-1 min-w-0 truncate',
-                  smAWon ? 'font-bold text-emerald-700 dark:text-emerald-400' : 'text-foreground',
-                  smBWon && 'font-normal text-muted-foreground',
+                  smAWon ? 'font-bold text-foreground' :
+                  smBWon ? 'font-normal text-muted-foreground' :
+                           'text-foreground',
                 )}>
                   {sm.player_a_name ?? '—'}
                 </span>
 
-                {/* Game score */}
+                {/* Score */}
                 {scoringMatch ? (
-                  <div className="flex items-center gap-1.5 shrink-0">
+                  <div className="flex items-center gap-1 shrink-0">
                     {smLive && <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />}
                     <span className={cn(
-                      'font-mono text-xs tabular-nums font-semibold',
-                      smAWon ? 'text-emerald-600 dark:text-emerald-400' : 'text-foreground',
+                      'font-mono text-xs tabular-nums font-bold',
+                      smAWon ? 'text-foreground' : 'text-muted-foreground/50',
                     )}>
-                      {scoringMatch.player1_games}
+                      {smP1G}
                     </span>
                     <span className="text-muted-foreground text-xs">–</span>
                     <span className={cn(
-                      'font-mono text-xs tabular-nums font-semibold',
-                      smBWon ? 'text-emerald-600 dark:text-emerald-400' : 'text-foreground',
+                      'font-mono text-xs tabular-nums font-bold',
+                      smBWon ? 'text-foreground' : 'text-muted-foreground/50',
                     )}>
-                      {scoringMatch.player2_games}
+                      {smP2G}
                     </span>
                   </div>
                 ) : (
-                  <span className="text-xs text-muted-foreground/40 font-mono shrink-0">–</span>
+                  <span className="text-xs text-muted-foreground/40 font-mono shrink-0 w-8 text-center">–</span>
                 )}
 
                 {/* Player B */}
                 <span className={cn(
                   'text-xs flex-1 min-w-0 truncate text-right',
-                  smBWon ? 'font-bold text-emerald-700 dark:text-emerald-400' : 'text-foreground',
-                  smAWon && 'font-normal text-muted-foreground',
+                  smBWon ? 'font-bold text-foreground' :
+                  smAWon ? 'font-normal text-muted-foreground' :
+                           'text-foreground',
                 )}>
                   {sm.player_b_name ?? '—'}
                 </span>

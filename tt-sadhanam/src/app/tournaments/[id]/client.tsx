@@ -125,7 +125,7 @@ export function PublicTournamentClient({
   )
 
   const mainContent = (
-    <main className={embedded ? "flex flex-col gap-5" : "flex-1 mx-auto w-full max-w-7xl px-4 sm:px-6 py-6 flex flex-col gap-5"}>
+    <main className={embedded ? "flex flex-col gap-5" : "page-shell flex flex-col gap-5"}>
 
       {/* ── Live Now — pinned, shows matches from any stage ── */}
       {liveMatches.length > 0 && (
@@ -326,7 +326,7 @@ function TournamentHero({ tournament, liveCount, champion, connectionStatus, isA
     <div className="relative overflow-hidden border-b border-border/60">
       <div className="absolute inset-0 bg-gradient-to-br from-orange-500/5 via-transparent to-transparent pointer-events-none" />
 
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 py-8 sm:py-10 relative">
+      <div className="mx-auto w-full max-w-screen-xl px-4 sm:px-6 py-8 sm:py-10 relative">
         {/* Live badge row */}
         <div className="flex items-center gap-3 mb-3 flex-wrap">
           {liveCount > 0 && (

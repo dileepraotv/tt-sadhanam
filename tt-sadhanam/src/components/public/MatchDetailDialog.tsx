@@ -94,15 +94,13 @@ function Inner({ match, games, isLoading, onClose }: {
           <div className="flex flex-col items-center gap-1.5">
             <div className="flex items-center gap-2 font-display tabular-nums">
               <span className={cn(
-                'text-4xl font-black text-white leading-none',
-                !p1Won && isComplete && 'opacity-40',
+                p1Won ? 'text-4xl font-black text-white leading-none' : isComplete ? 'text-4xl font-black text-white/40 leading-none' : 'text-4xl font-black text-white leading-none',
               )}>
                 {match.player1_games}
               </span>
               <span className="text-white/30 text-2xl font-light">–</span>
               <span className={cn(
-                'text-4xl font-black text-white leading-none',
-                !p2Won && isComplete && 'opacity-40',
+                p2Won ? 'text-4xl font-black text-white leading-none' : isComplete ? 'text-4xl font-black text-white/40 leading-none' : 'text-4xl font-black text-white leading-none',
               )}>
                 {match.player2_games}
               </span>

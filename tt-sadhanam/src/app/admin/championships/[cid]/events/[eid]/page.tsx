@@ -207,7 +207,7 @@ export default async function AdminEventPage({ params, searchParams }: PageProps
         ]}
       />
 
-      <main className="flex-1 mx-auto w-full max-w-5xl px-4 sm:px-6 py-6">
+      <main className="page-shell page-content">
         <div className="surface-card p-4 sm:p-6 lg:p-8">
 
           {/* Event header */}

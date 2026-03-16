@@ -344,7 +344,6 @@ function FixtureRow({ match, onMatchClick }: {
 }) {
   const isLive     = match.status === 'live'
   const isComplete = match.status === 'complete'
-  const isPending  = match.status === 'pending'
   const isClickable = isLive || isComplete
 
   const p1 = match.player1
@@ -353,8 +352,9 @@ function FixtureRow({ match, onMatchClick }: {
   const p2Won = isComplete && match.winner_id === match.player2_id
 
   const games = match.games
-    ? [...match.games].sort((a, b) => a.game_number - b.game_number)
+    ? [...match.games].sort((a, b) => a.game_number - b.game_number).filter(g => g.score1 != null)
     : []
+  const isDeclared = isComplete && games.length === 0
 
   return (
     <div
@@ -363,81 +363,76 @@ function FixtureRow({ match, onMatchClick }: {
       onClick={() => isClickable && onMatchClick(match)}
       onKeyDown={e => { if (isClickable && (e.key === 'Enter' || e.key === ' ')) onMatchClick(match) }}
       className={cn(
-        'flex flex-col px-3 py-2.5 rounded-lg border text-sm transition-colors',
-        isLive && 'border-orange-400/60 bg-orange-50/80 dark:bg-orange-950/20',
-        isComplete && 'bg-slate-100/80 dark:bg-slate-800/40 border-border/40',
-        !isComplete && !isLive && 'bg-card border-border',
-        isClickable && 'cursor-pointer hover:bg-muted/20',
+        'flex flex-col px-3 py-2 border text-sm transition-colors',
+        isLive && 'bg-orange-50/80 dark:bg-orange-950/20 border-l-2 border-l-orange-400 border-border/40',
+        isComplete && 'bg-slate-100/80 dark:bg-slate-800/40 border-border/30',
+        !isComplete && !isLive && 'bg-card border-border/0',
+        isClickable && 'cursor-pointer hover:bg-muted/10',
       )}
     >
-      {/* Main row — matches admin FixtureRow layout */}
-      <div className="flex items-center gap-2">
-        {/* Status chip */}
+      {/* Player 1 row */}
+      <div className={cn(
+        'flex items-center gap-2 py-1 px-1 rounded',
+        p1Won && 'border border-blue-900/35 bg-blue-950/5 dark:bg-blue-900/10',
+      )}>
+        <WinnerTrophy show={p1Won} size="sm" />
+        {p1?.seed != null && <span className="seed-badge text-[9px] shrink-0">{p1.seed}</span>}
         <span className={cn(
-          'shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide min-w-[30px] text-center',
-          isComplete && 'bg-muted text-muted-foreground',
-          isLive     && 'bg-orange-500 text-white animate-pulse',
-          isPending  && 'bg-muted text-muted-foreground/60',
-        )}>
-          {isLive ? 'Live' : isComplete ? 'Done' : 'vs'}
-        </span>
-
-        {/* Player 1 — trophy BEFORE name, matching admin RRGroupView layout */}
-        <div className={cn(
-          'flex items-center gap-1 flex-1 min-w-0 truncate font-medium',
-          p1Won && 'font-bold text-foreground',
-          p2Won && 'text-muted-foreground',
-        )}>
-          <WinnerTrophy show={p1Won} size="sm" />
-          {p1?.seed != null && <span className="seed-badge text-[9px] shrink-0">{p1.seed}</span>}
-          <span className="truncate">{p1?.name ?? 'TBD'}</span>
-        </div>
-
-        {/* Score / VS */}
-        {(isComplete || isLive) ? (
-          <span className="shrink-0 font-mono text-sm font-bold tabular-nums text-center w-10">
-            {match.player1_games}–{match.player2_games}
-          </span>
-        ) : (
-          <span className="text-xs text-muted-foreground/60 font-normal w-6 text-center">vs</span>
+          'flex-1 min-w-0 truncate font-medium',
+          p1Won ? 'font-bold text-foreground' : p2Won ? 'font-normal text-muted-foreground' : 'text-foreground',
+        )}>{p1?.name ?? 'TBD'}</span>
+        {(isComplete || isLive) && (
+          <span className={cn(
+            'font-mono font-bold tabular-nums w-5 text-right shrink-0',
+            p1Won ? 'text-foreground' : 'text-muted-foreground/50',
+          )}>{match.player1_games}</span>
         )}
+        {isClickable && !p1Won && !p2Won && <ChevronRight className="h-3 w-3 text-muted-foreground/40 shrink-0" />}
+      </div>
 
-        {/* Player 2 — trophy AFTER name, matching admin RRGroupView layout */}
-        <div className={cn(
-          'flex items-center gap-1 flex-1 min-w-0 truncate font-medium justify-end',
-          p2Won && 'font-bold text-foreground',
-          p1Won && 'text-muted-foreground',
-        )}>
-          {p2?.seed != null && <span className="seed-badge text-[9px] shrink-0">{p2.seed}</span>}
-          <span className="truncate">{p2?.name ?? 'TBD'}</span>
-          <WinnerTrophy show={p2Won} size="sm" />
-        </div>
+      {/* Divider */}
+      <div className="border-b border-border/30 mx-1" />
 
-        {/* Click hint */}
-        {isClickable && (
-          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
+      {/* Player 2 row */}
+      <div className={cn(
+        'flex items-center gap-2 py-1 px-1 rounded',
+        p2Won && 'border border-blue-900/35 bg-blue-950/5 dark:bg-blue-900/10',
+      )}>
+        <WinnerTrophy show={p2Won} size="sm" />
+        {p2?.seed != null && <span className="seed-badge text-[9px] shrink-0">{p2.seed}</span>}
+        <span className={cn(
+          'flex-1 min-w-0 truncate font-medium',
+          p2Won ? 'font-bold text-foreground' : p1Won ? 'font-normal text-muted-foreground' : 'text-foreground',
+        )}>{p2?.name ?? 'TBD'}</span>
+        {(isComplete || isLive) && (
+          <span className={cn(
+            'font-mono font-bold tabular-nums w-5 text-right shrink-0',
+            p2Won ? 'text-foreground' : 'text-muted-foreground/50',
+          )}>{match.player2_games}</span>
         )}
       </div>
 
-      {/* Set scores — shown below for completed and live matches */}
-      {games.length > 0 && (isComplete || isLive) && (
-        <div className="flex gap-1.5 mt-1.5 pl-12 flex-wrap">
+      {/* Game chips at bottom */}
+      {games.length > 0 && (
+        <div className="flex flex-wrap gap-1 pt-1.5 mt-0.5 border-t border-border/20">
           {games.map(g => {
             const p1WonGame = g.winner_id === match.player1_id
             return (
-              <span
-                key={g.id}
-                className={cn(
-                  'text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded border tabular-nums',
-                  p1WonGame
-                    ? 'bg-orange-100 border-orange-200/80 text-orange-700 dark:bg-orange-950/40 dark:border-orange-800 dark:text-orange-400'
-                    : 'bg-muted/40 border-border/30 text-muted-foreground',
-                )}
-              >
+              <span key={g.id} className={cn(
+                'text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded border tabular-nums',
+                p1WonGame
+                  ? 'bg-orange-100 border-orange-200/80 text-orange-700 dark:bg-orange-950/40 dark:border-orange-800 dark:text-orange-400'
+                  : 'bg-muted/40 border-border/30 text-muted-foreground',
+              )}>
                 {g.score1}–{g.score2}
               </span>
             )
           })}
+        </div>
+      )}
+      {isDeclared && (
+        <div className="pt-1 mt-0.5 border-t border-border/20">
+          <span className="text-[10px] text-muted-foreground/60 italic">Admin-declared result</span>
         </div>
       )}
     </div>

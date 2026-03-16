@@ -98,7 +98,7 @@ export function PublicPureRRView({ tournament, matches: initialMatches, players 
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6 flex flex-col gap-6">
+    <div className="page-content flex flex-col gap-6">
       {/* Progress bar */}
       <div className="bg-card rounded-xl border border-border p-4">
         <div className="flex items-center justify-between mb-2">

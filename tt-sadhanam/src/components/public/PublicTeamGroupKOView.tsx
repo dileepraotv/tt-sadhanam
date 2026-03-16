@@ -348,96 +348,97 @@ export function PublicTeamGroupKOView({ tournament }: { tournament: Tournament }
 }
 
 // ─── PublicFixtureRow ─────────────────────────────────────────────────────────
+// Groups tab: shows team match with standings-style winner/loser styling + rubber details
 
 function PublicFixtureRow({ match }: { match: TeamMatchRow }) {
   const [expanded, setExpanded] = useState(false)
   const isComplete = match.status === 'complete'
   const isLive     = match.status === 'live'
+  const aWon       = isComplete && match.winner_team_id === match.team_a_id
+  const bWon       = isComplete && match.winner_team_id === match.team_b_id
   const done       = match.submatches.filter(s => s.scoring?.status === 'complete').length
   const total      = match.submatches.length
 
+  const WINNER_ROW = 'border border-blue-900/35 bg-blue-950/5 dark:bg-blue-900/10 dark:border-blue-700/40 rounded'
+
   return (
-    <div className={cn('rounded-lg border overflow-hidden', matchStatusClasses(match.status))}>
-      {/* Header — two-line: Team A then Team B */}
+    <div className={cn('rounded-lg border overflow-hidden',
+      isLive     ? 'border-orange-400/70 bg-orange-50/50 dark:bg-orange-950/15' :
+      isComplete ? 'border-border/40 bg-slate-100/80 dark:bg-slate-800/40' :
+                   'border-border bg-card',
+    )}>
       <button
         className="w-full px-3 pt-2.5 pb-2 text-left hover:bg-muted/10 transition-colors"
         onClick={() => setExpanded(e => !e)}
       >
         {/* Team A row */}
-        <div className="flex items-center gap-1.5">
+        <div className={cn('flex items-center gap-1.5 px-1 py-0.5', aWon && WINNER_ROW)}>
+          <WinnerTrophy show={aWon} size="sm" />
           <span className="w-2 h-2 rounded-full shrink-0" style={{ background: (match.team_a as any)?.color ?? '#888' }} />
-          {match.winner_team_id === match.team_a_id && <span className="text-amber-500 text-xs">🏆</span>}
           <span className={cn('text-sm flex-1 min-w-0 truncate',
-            isComplete && match.winner_team_id === match.team_a_id ? 'font-bold text-foreground' :
-            isComplete ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground')}>
+            aWon ? 'font-bold text-foreground' : bWon ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground')}>
             {match.team_a?.name ?? '—'}
           </span>
           <span className={cn('font-mono font-bold text-sm tabular-nums shrink-0',
-            isComplete && match.winner_team_id === match.team_a_id ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/60')}>
+            aWon ? 'text-foreground' : bWon ? 'text-muted-foreground/50' : 'text-muted-foreground/70')}>
             {match.team_a_score}
           </span>
-          {/* Action buttons only on first row */}
           <div className="flex items-center gap-1.5 shrink-0 ml-1">
             {isLive && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/40 text-orange-600">LIVE</span>}
             <span className="text-xs text-muted-foreground">{done}/{total}</span>
             <ChevronDown className={cn('h-3.5 w-3.5 text-muted-foreground transition-transform', expanded && 'rotate-180')} />
           </div>
         </div>
+
         {/* Divider */}
-        <div className="border-b border-border/20 my-1 ml-4" />
+        <div className="border-b border-border/20 my-1 mx-1" />
+
         {/* Team B row */}
-        <div className="flex items-center gap-1.5">
+        <div className={cn('flex items-center gap-1.5 px-1 py-0.5', bWon && WINNER_ROW)}>
+          <WinnerTrophy show={bWon} size="sm" />
           <span className="w-2 h-2 rounded-full shrink-0" style={{ background: (match.team_b as any)?.color ?? '#888' }} />
-          {match.winner_team_id === match.team_b_id && <span className="text-amber-500 text-xs">🏆</span>}
           <span className={cn('text-sm flex-1 min-w-0 truncate',
-            isComplete && match.winner_team_id === match.team_b_id ? 'font-bold text-foreground' :
-            isComplete ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground')}>
+            bWon ? 'font-bold text-foreground' : aWon ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground')}>
             {match.team_b?.name ?? '—'}
           </span>
           <span className={cn('font-mono font-bold text-sm tabular-nums shrink-0',
-            isComplete && match.winner_team_id === match.team_b_id ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/60')}>
+            bWon ? 'text-foreground' : aWon ? 'text-muted-foreground/50' : 'text-muted-foreground/70')}>
             {match.team_b_score}
           </span>
-          <span className="w-16 shrink-0" />{/* spacer to align with action row above */}
+          <span className="w-16 shrink-0" />
         </div>
       </button>
 
       {/* Expanded rubber details */}
       {expanded && (
         <div className="border-t border-border/40 divide-y divide-border/30">
-          {/* Column headers */}
           <div className="px-3 py-1.5 grid grid-cols-[1fr_auto_1fr] gap-2 bg-muted/30">
             <span className="text-[10px] font-bold text-muted-foreground uppercase">{match.team_a?.name ?? 'Team A'}</span>
-            <span className="text-[10px] text-muted-foreground"></span>
+            <span className="text-[10px] text-muted-foreground" />
             <span className="text-[10px] font-bold text-muted-foreground uppercase text-right">{match.team_b?.name ?? 'Team B'}</span>
           </div>
           {match.submatches.map((sm, idx) => {
-            const sc      = sm.scoring
-            const smDone  = sc?.status === 'complete'
-            const smLive  = sc?.status === 'live'
-            const p1g     = sc?.player1_games ?? 0
-            const p2g     = sc?.player2_games ?? 0
-            const aWon    = smDone && p1g > p2g
-            const bWon    = smDone && p2g > p1g
+            const sc    = sm.scoring
+            const smDone = sc?.status === 'complete'
+            const smLive = sc?.status === 'live'
+            const p1g   = sc?.player1_games ?? 0
+            const p2g   = sc?.player2_games ?? 0
+            const smAWon = smDone && p1g > p2g
+            const smBWon = smDone && p2g > p1g
             return (
               <div key={sm.id} className={cn('px-3 py-2 grid grid-cols-[1fr_auto_1fr] gap-2 items-center text-xs',
                 smLive && 'bg-orange-50/30 dark:bg-orange-950/10',
-                smDone && 'bg-muted/10',
               )}>
-                {/* Team A player */}
                 <div className="flex items-center gap-1 min-w-0">
-                  <span className={cn('text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center shrink-0',
-                    smDone ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300' : 'bg-muted text-muted-foreground'
-                  )}>{idx + 1}</span>
-                  <span className={cn('truncate', aWon ? 'font-semibold text-emerald-600 dark:text-emerald-400' : bWon ? 'text-muted-foreground' : '')}>{sm.player_a_name ?? '—'}</span>
+                  <span className="text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center shrink-0 bg-muted text-muted-foreground">{idx + 1}</span>
+                  <span className={cn('truncate', smAWon ? 'font-semibold text-foreground' : smBWon ? 'text-muted-foreground' : '')}>{sm.player_a_name ?? '—'}</span>
                 </div>
-                {/* Score */}
                 <div className="flex items-center gap-1 shrink-0 justify-center">
                   {smDone ? (
                     <span className="font-mono font-bold tabular-nums text-xs">
-                      <span className={aWon ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/50'}>{p1g}</span>
+                      <span className={smAWon ? 'text-foreground' : 'text-muted-foreground/50'}>{p1g}</span>
                       <span className="text-muted-foreground mx-0.5">–</span>
-                      <span className={bWon ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/50'}>{p2g}</span>
+                      <span className={smBWon ? 'text-foreground' : 'text-muted-foreground/50'}>{p2g}</span>
                     </span>
                   ) : smLive ? (
                     <span className="flex items-center gap-1 text-orange-500">
@@ -448,9 +449,8 @@ function PublicFixtureRow({ match }: { match: TeamMatchRow }) {
                     <span className="text-[10px] text-muted-foreground/40">vs</span>
                   )}
                 </div>
-                {/* Team B player */}
                 <div className="flex items-center gap-1 min-w-0 justify-end">
-                  <span className={cn('truncate text-right', bWon ? 'font-semibold text-emerald-600 dark:text-emerald-400' : aWon ? 'text-muted-foreground' : '')}>{sm.player_b_name ?? '—'}</span>
+                  <span className={cn('truncate text-right', smBWon ? 'font-semibold text-foreground' : smAWon ? 'text-muted-foreground' : '')}>{sm.player_b_name ?? '—'}</span>
                 </div>
               </div>
             )
@@ -467,37 +467,57 @@ function PublicKOCard({ match }: { match: TeamMatchRow }) {
   const [expanded, setExpanded] = useState(false)
   const isComplete = match.status === 'complete'
   const isLive     = match.status === 'live'
+  const aWon       = isComplete && match.winner_team_id === match.team_a_id
+  const bWon       = isComplete && match.winner_team_id === match.team_b_id
   const done       = match.submatches.filter(s => s.scoring?.status === 'complete').length
 
+  const WINNER_ROW = 'border border-blue-900/35 bg-blue-950/5 dark:bg-blue-900/10 dark:border-blue-700/40 rounded'
+
   return (
-    <div className={cn('rounded-xl border overflow-hidden', matchStatusClasses(match.status))}>
+    <div className={cn('rounded-xl border overflow-hidden',
+      isLive     ? 'border-orange-400/70 bg-orange-50/50 dark:bg-orange-950/15 shadow-sm' :
+      isComplete ? 'border-border/40 bg-slate-100/80 dark:bg-slate-800/40' :
+                   'border-border bg-card',
+    )}>
       <button
-        className="w-full px-3 py-2.5 flex flex-col gap-2 text-left hover:bg-muted/10 transition-colors"
+        className="w-full px-3 py-2.5 flex flex-col gap-1.5 text-left hover:bg-muted/10 transition-colors"
         onClick={() => setExpanded(e => !e)}
       >
-        {/* Team A */}
-        <div className={cn('flex items-center gap-2', isComplete && match.winner_team_id !== match.team_a_id && 'text-muted-foreground/60')}>
-          <WinnerTrophy show={isComplete && match.winner_team_id === match.team_a_id} />
+        {/* Team A row */}
+        <div className={cn('flex items-center gap-2 px-1 py-0.5', aWon && WINNER_ROW)}>
+          <WinnerTrophy show={aWon} size="sm" />
           <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: (match.team_a as TeamRow | null)?.color ?? '#888' }} />
-          <span className={cn('text-sm flex-1 truncate', isComplete && match.winner_team_id === match.team_a_id ? 'font-bold text-foreground' : isComplete ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground')}>{match.team_a?.name ?? 'TBD'}</span>
-          <span className="text-sm font-bold font-mono tabular-nums">{match.team_a_score}</span>
+          <span className={cn('text-sm flex-1 truncate',
+            aWon ? 'font-bold text-foreground' : bWon ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground')}>
+            {match.team_a?.name ?? 'TBD'}
+          </span>
+          <span className={cn('text-sm font-bold font-mono tabular-nums shrink-0',
+            aWon ? 'text-foreground' : bWon ? 'text-muted-foreground/50' : 'text-muted-foreground/70')}>
+            {match.team_a_score}
+          </span>
         </div>
-        <div className="border-t border-border/30" />
-        {/* Team B */}
-        <div className={cn('flex items-center gap-2', isComplete && match.winner_team_id !== match.team_b_id && 'text-muted-foreground/60')}>
-          <WinnerTrophy show={isComplete && match.winner_team_id === match.team_b_id} />
+
+        <div className="border-t border-border/30 mx-1" />
+
+        {/* Team B row */}
+        <div className={cn('flex items-center gap-2 px-1 py-0.5', bWon && WINNER_ROW)}>
+          <WinnerTrophy show={bWon} size="sm" />
           <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: (match.team_b as TeamRow | null)?.color ?? '#888' }} />
-          <span className={cn('text-sm flex-1 truncate', isComplete && match.winner_team_id === (match.team_b as TeamRow | null)?.id ? 'font-bold text-foreground' : isComplete ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground')}>{match.team_b?.name ?? 'TBD'}</span>
-          <span className="text-sm font-bold font-mono tabular-nums">{match.team_b_score}</span>
+          <span className={cn('text-sm flex-1 truncate',
+            bWon ? 'font-bold text-foreground' : aWon ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground')}>
+            {match.team_b?.name ?? 'TBD'}
+          </span>
+          <span className={cn('text-sm font-bold font-mono tabular-nums shrink-0',
+            bWon ? 'text-foreground' : aWon ? 'text-muted-foreground/50' : 'text-muted-foreground/70')}>
+            {match.team_b_score}
+          </span>
         </div>
-        <div className="flex items-center justify-between border-t border-border/20 pt-1.5">
+
+        {/* Footer */}
+        <div className="flex items-center justify-between border-t border-border/20 pt-1.5 mx-1">
           <div className="flex items-center gap-2">
-            {isLive && (
-              <span className="text-xs font-semibold px-1.5 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-400">
-                LIVE
-              </span>
-            )}
-            {isComplete && <span className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold">Done</span>}
+            {isLive && <span className="text-xs font-semibold px-1.5 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-400">LIVE</span>}
+            {isComplete && <span className="text-xs text-muted-foreground font-medium">Done</span>}
             {!isLive && !isComplete && <span className="text-xs text-muted-foreground">Upcoming</span>}
           </div>
           <div className="flex items-center gap-2">
@@ -516,23 +536,18 @@ function PublicKOCard({ match }: { match: TeamMatchRow }) {
             const smLive = sc?.status === 'live'
             const p1g    = sc?.player1_games ?? 0
             const p2g    = sc?.player2_games ?? 0
-            const aWon   = smDone && p1g > p2g
-            const bWon   = smDone && p2g > p1g
+            const smAWon = smDone && p1g > p2g
+            const smBWon = smDone && p2g > p1g
             return (
-              <div key={sm.id} className={cn('px-3 py-2 text-xs',
-                smLive && 'bg-orange-50/30 dark:bg-orange-950/10',
-                smDone && 'bg-muted/5',
-              )}>
+              <div key={sm.id} className={cn('px-3 py-2 text-xs', smLive && 'bg-orange-50/30 dark:bg-orange-950/10')}>
                 <div className="flex items-center gap-1 mb-0.5">
-                  <span className={cn('text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center shrink-0',
-                    smDone ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300' : 'bg-muted text-muted-foreground'
-                  )}>{idx + 1}</span>
+                  <span className="text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center shrink-0 bg-muted text-muted-foreground">{idx + 1}</span>
                   <span className="text-muted-foreground">{sm.label}</span>
                   {smDone && (
                     <span className="ml-auto font-mono font-bold tabular-nums">
-                      <span className={aWon ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/50'}>{p1g}</span>
+                      <span className={smAWon ? 'text-foreground' : 'text-muted-foreground/50'}>{p1g}</span>
                       <span className="text-muted-foreground mx-0.5">–</span>
-                      <span className={bWon ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/50'}>{p2g}</span>
+                      <span className={smBWon ? 'text-foreground' : 'text-muted-foreground/50'}>{p2g}</span>
                     </span>
                   )}
                   {smLive && (
@@ -544,9 +559,9 @@ function PublicKOCard({ match }: { match: TeamMatchRow }) {
                   {!smDone && !smLive && <span className="ml-auto text-muted-foreground/40">vs</span>}
                 </div>
                 <div className="grid grid-cols-[1fr_auto_1fr] gap-1 ml-5">
-                  <span className={cn('truncate', aWon ? 'font-semibold text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground')}>{sm.player_a_name ?? '—'}</span>
+                  <span className={cn('truncate', smAWon ? 'font-semibold text-foreground' : 'text-muted-foreground')}>{sm.player_a_name ?? '—'}</span>
                   <span className="text-muted-foreground/30 text-[10px]">vs</span>
-                  <span className={cn('truncate text-right', bWon ? 'font-semibold text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground')}>{sm.player_b_name ?? '—'}</span>
+                  <span className={cn('truncate text-right', smBWon ? 'font-semibold text-foreground' : 'text-muted-foreground')}>{sm.player_b_name ?? '—'}</span>
                 </div>
               </div>
             )

@@ -501,3 +501,24 @@
   .fade-up-delay-4  { animation: fade-up 0.3s 0.24s ease-out both; }
 
 }
+
+  /* ── Shared layout containers ─────────────────────────────────────────── *
+   * Use these instead of inline max-w-* so width strategy is centralized.  *
+   *                                                                         *
+   * .page-shell    — outermost page wrapper (flex-1 column)                *
+   * .page-content  — standard page content: max 1280px, responsive pad     *
+   * .page-wide     — wide content (brackets, standings): max 1400px        *
+   * .page-narrow   — compact content (settings, forms): max 768px          *
+   * ─────────────────────────────────────────────────────────────────────── */
+  .page-shell {
+    @apply flex-1 w-full;
+  }
+  .page-content {
+    @apply mx-auto w-full max-w-screen-xl px-4 sm:px-6 py-6;
+  }
+  .page-wide {
+    @apply mx-auto w-full max-w-[1400px] px-4 sm:px-6 py-6;
+  }
+  .page-narrow {
+    @apply mx-auto w-full max-w-3xl px-4 sm:px-6 py-6;
+  }
