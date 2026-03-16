@@ -247,10 +247,10 @@ export function ExcelUpload({ tournamentId, existingPlayers, onComplete }: Props
               href="https://drive.google.com/drive/folders/1r45xuGSDsa7Y4Q0DdVkirbvqnUE4E_Pq?usp=sharing"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1.5 text-xs font-semibold text-orange-600 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300 transition-colors shrink-0"
+              className="download-samples-btn inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 bg-red-600 text-white text-sm font-bold hover:bg-red-700 transition-colors shrink-0"
             >
-              <FileSpreadsheet className="h-3.5 w-3.5" />
-              Download Samples
+              <FileSpreadsheet className="h-4 w-4" />
+              ⬇ Download Samples
             </a>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-muted-foreground">

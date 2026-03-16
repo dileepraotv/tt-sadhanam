@@ -253,7 +253,7 @@ function FullBracket({ rounds, isAdmin, onMatchClick }: {
                         <DrawCard
                           match={match}
                           isAdmin={isAdmin}
-                          onClick={onMatchClick ? () => onMatchClick(match) : undefined}
+                          onClick={onMatchClick && match.status !== 'bye' ? () => onMatchClick(match) : undefined}
                         />
                       </div>
                     </div>
@@ -467,7 +467,7 @@ function RoundList({ round, isAdmin, matchBasePath, onMatchClick, expandedMatchI
         key={m.id}
         match={m}
         isAdmin={isAdmin}
-        onClick={onMatchClick ? () => onMatchClick(m) : undefined}
+        onClick={onMatchClick && !isBye ? () => onMatchClick(m) : undefined}
         href={isAdmin ? `${base}/${m.id}` : undefined}
       />
     )

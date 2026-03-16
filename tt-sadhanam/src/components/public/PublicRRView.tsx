@@ -344,7 +344,7 @@ function FixtureRow({ match, onMatchClick }: {
 }) {
   const isLive     = match.status === 'live'
   const isComplete = match.status === 'complete'
-  const isClickable = isLive || isComplete
+  const isClickable = isLive  // only live opens detail; completed shows all info on card
 
   const p1 = match.player1
   const p2 = match.player2

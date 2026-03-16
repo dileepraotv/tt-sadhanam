@@ -22,9 +22,8 @@ import { LiveBadge }          from '@/components/shared/LiveBadge'
 import { EventHeaderActions } from './EventHeaderActions'
 import type { Tournament, Player, Match, Stage, RRStageConfig } from '@/lib/types'
 import { formatDate, formatFormatLabel } from '@/lib/utils'
-import { computeAllGroupStandings, groupProgress } from '@/lib/roundrobin/standings'
-import type { RRGroup, GroupStandings } from '@/lib/roundrobin/types'
 import { Calendar, MapPin, ExternalLink, Layers } from 'lucide-react'
+import { loadAdminEventData } from '@/lib/actions/adminEventData'
 
 interface PageProps {
   params:       { cid: string; eid: string }
@@ -34,93 +33,24 @@ interface PageProps {
 export const revalidate = 0
 
 async function getData(cid: string, eid: string, userId: string) {
+  // Verify championship ownership separately, then delegate event data loading
+  // to the shared utility (avoids duplicating 80+ lines with tournaments/[id]/page.tsx)
   const supabase = createClient()
+  const champRes = await supabase.from('championships')
+    .select('id, name, published').eq('id', cid).eq('created_by', userId).single()
+  if (!champRes.data) return null
 
-  // champ, tournament, players, and matches are all independent — run in parallel
-  const [champRes, evRes, playersRes2, matchesRes2] = await Promise.all([
-    supabase.from('championships').select('id, name, published')
-      .eq('id', cid).eq('created_by', userId).single(),
-    supabase.from('tournaments').select('*').eq('id', eid).eq('championship_id', cid).single(),
-    supabase.from('players').select('*').eq('tournament_id', eid)
-      .order('seed', { ascending: true, nullsFirst: false }),
-    supabase.from('matches')
-      .select('*, player1:player1_id(id,name,seed,club), player2:player2_id(id,name,seed,club), winner:winner_id(id,name,seed), games(id,match_id,game_number,score1,score2,winner_id)')
-      .eq('tournament_id', eid).order('round').order('match_number'),
-  ])
+  // Verify tournament belongs to this championship
+  const evCheck = await supabase.from('tournaments')
+    .select('id').eq('id', eid).eq('championship_id', cid).single()
+  if (!evCheck.data) return null
 
-  const champ  = champRes.data
-  const ev     = evRes.data
-  const players  = playersRes2.data
-  const matches  = matchesRes2.data
-
-  if (!champ) return null
-  if (!ev) return null
-
-  const tournament = ev as unknown as Tournament
-
-  // Multi-stage: load stage data when needed
-  let rrStage:     Stage | null     = null
-  let koStage:     Stage | null     = null
-  let rrGroups:    RRGroup[]        = []
-  let rrStandings: GroupStandings[] = []
-  let hasScores    = false
-  let allComplete  = false
-
-  const hasRR = tournament.format_type === 'multi_rr_to_knockout' ||
-                tournament.format_type === 'single_round_robin'
-
-  if (hasRR) {
-    // Embed rr_groups in the stages query — no serial follow-up needed
-    const { data: stageRows } = await supabase
-      .from('stages')
-      .select('*, rr_groups(id, stage_id, name, group_number, rr_group_members(player_id))')
-      .eq('tournament_id', eid)
-      .order('stage_number')
-
-    for (const s of stageRows ?? []) {
-      if (s.stage_type === 'round_robin') rrStage = s as unknown as Stage
-      if (s.stage_type === 'knockout')    koStage = s as unknown as Stage
-    }
-
-    if (rrStage) {
-      // rr_groups already loaded via join on the stage row
-      const embedded = (rrStage as unknown as {
-        rr_groups?: Array<{id: string; stage_id: string; name: string; group_number: number; rr_group_members: {player_id: string}[]}>
-      }).rr_groups ?? []
-
-      rrGroups = embedded.map(g => ({
-        id:          g.id,
-        stageId:     g.stage_id,
-        name:        g.name,
-        groupNumber: g.group_number,
-        playerIds:   (g.rr_group_members ?? []).map(m => m.player_id),
-      }))
-
-      const allMatchList  = (matches ?? []) as unknown as Match[]
-      const rrMatchList   = allMatchList.filter(m => m.stage_id === rrStage!.id)
-      const allGames      = rrMatchList.flatMap(m => m.games ?? [])
-      hasScores   = allGames.some(g => g.score1 != null || g.score2 != null)
-      allComplete = groupProgress(rrMatchList).allDone && rrMatchList.length > 0
-
-      if (rrGroups.length > 0) {
-        const cfg = rrStage.config as RRStageConfig
-        rrStandings = computeAllGroupStandings(
-          rrGroups,
-          (players ?? []) as unknown as Player[],
-          rrMatchList,
-          allGames,
-          cfg.advanceCount ?? 2,
-        )
-      }
-    }
-  }
+  const eventData = await loadAdminEventData(eid, userId, 'none')
+  if (!eventData) return null
 
   return {
-    champ:       champ as { id: string; name: string; published: boolean },
-    tournament,
-    players:     (players ?? []) as unknown as Player[],
-    matches:     (matches ?? []) as unknown as Match[],
-    rrStage, koStage, rrGroups, rrStandings, hasScores, allComplete,
+    champ:       champRes.data as { id: string; name: string; published: boolean },
+    ...eventData,
   }
 }
 

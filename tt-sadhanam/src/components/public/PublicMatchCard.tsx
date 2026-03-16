@@ -36,7 +36,7 @@ export function PublicMatchCard({ match, onMatchClick, compact = false, groupNam
   const isLive     = match.status === 'live'
   const isComplete = match.status === 'complete'
   const isBye      = match.status === 'bye'
-  const isClickable = (isLive || isComplete) && !!onMatchClick
+  const isClickable = isLive && !!onMatchClick  // only live opens detail
 
   const p1Won = isComplete && match.winner_id === match.player1_id
   const p2Won = isComplete && match.winner_id === match.player2_id
@@ -114,7 +114,7 @@ export function PublicMatchCard({ match, onMatchClick, compact = false, groupNam
           })}
           {isClickable && (
             <span className="ml-auto text-[10px] text-muted-foreground/50 self-end">
-              tap for details →
+              tap for live score →
             </span>
           )}
         </div>

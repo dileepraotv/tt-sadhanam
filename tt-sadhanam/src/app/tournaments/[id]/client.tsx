@@ -86,7 +86,9 @@ export function PublicTournamentClient({
   }, [selectedMatchId, selectedMatch, gamesCache])
 
   const handleMatchClick = useCallback((match: Match) => {
-    if (match.status === 'bye') return
+    // Only open detail dialog for LIVE matches — completed matches already show
+    // all details on the card itself. Bye matches are never clickable.
+    if (match.status !== 'live') return
     const newId = match.id === selectedMatchId ? null : match.id
     setSelectedMatchId(newId)
     if (newId) {

@@ -1626,14 +1626,14 @@ function TeamMatchBracketCard({
                 <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: teamA?.color ?? '#F06321' }} />
                 <WinnerTrophy show={aWon} size="sm" />
                 <span className={cn('text-sm truncate',
-                  aWon ? 'font-bold text-emerald-600 dark:text-emerald-400' :
+                  aWon ? 'font-bold text-foreground' :
                   bWon ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground',
                 )}>
                   {teamA?.name ?? <span className="italic text-muted-foreground/50">TBD</span>}
                 </span>
               </div>
               <span className={cn('font-mono font-bold tabular-nums text-base text-center self-center',
-                aWon ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/60',
+                aWon ? 'font-bold text-foreground' : 'text-muted-foreground/50',
               )}>{teamMatch.team_a_score}</span>
             </div>
             <div className="border-b border-border/20 my-0.5" />
@@ -1643,14 +1643,14 @@ function TeamMatchBracketCard({
                 <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: teamB?.color ?? '#6366f1' }} />
                 <WinnerTrophy show={bWon} size="sm" />
                 <span className={cn('text-sm truncate',
-                  bWon ? 'font-bold text-emerald-600 dark:text-emerald-400' :
+                  bWon ? 'font-bold text-foreground' :
                   aWon ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground',
                 )}>
                   {teamB?.name ?? <span className="italic text-muted-foreground/50">TBD</span>}
                 </span>
               </div>
               <span className={cn('font-mono font-bold tabular-nums text-base text-center self-center',
-                bWon ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/60',
+                bWon ? 'font-bold text-foreground' : 'text-muted-foreground/50',
               )}>{teamMatch.team_b_score}</span>
             </div>
 
@@ -1799,9 +1799,9 @@ function TeamMatchBracketCard({
                           smDone ? 'text-foreground' : smLive ? 'text-orange-500' : 'text-muted-foreground/50',
                         )}>
                           {smLive && <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse shrink-0" />}
-                          <span className={smAWon ? 'text-emerald-600 dark:text-emerald-400' : ''}>{p1g}</span>
+                          <span className={smAWon ? 'font-bold text-foreground' : 'text-muted-foreground/50'}>{p1g}</span>
                           <span className="text-muted-foreground/40">–</span>
-                          <span className={smBWon ? 'text-emerald-600 dark:text-emerald-400' : ''}>{p2g}</span>
+                          <span className={smBWon ? 'font-bold text-foreground' : 'text-muted-foreground/50'}>{p2g}</span>
                           {smDone && <Check className="h-3 w-3 text-emerald-500 ml-0.5" />}
                         </div>
                       )}
@@ -2003,13 +2003,13 @@ function TeamMatchAdminCard({
             <span className="w-2 h-2 rounded-full shrink-0" style={{ background: teamA?.color ?? '#F06321' }} />
             {aWon && <span className="text-amber-400 text-xs">🏆</span>}
             <span className={cn('font-semibold text-sm truncate flex-1 min-w-0',
-              aWon ? 'text-emerald-600 dark:text-emerald-400 font-bold' :
+              aWon ? 'font-bold text-foreground' :
               bWon ? 'text-muted-foreground font-normal' : 'text-foreground',
             )}>
               {teamA?.short_name ?? teamA?.name ?? '—'}
             </span>
             <span className={cn('font-mono font-bold text-sm tabular-nums shrink-0',
-              aWon ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/60',
+              aWon ? 'font-bold text-foreground' : 'text-muted-foreground/50',
             )}>
               {teamMatch.team_a_score}
             </span>
@@ -2020,13 +2020,13 @@ function TeamMatchAdminCard({
             <span className="w-2 h-2 rounded-full shrink-0" style={{ background: teamB?.color ?? '#6366f1' }} />
             {bWon && <span className="text-amber-400 text-xs">🏆</span>}
             <span className={cn('font-semibold text-sm truncate flex-1 min-w-0',
-              bWon ? 'text-emerald-600 dark:text-emerald-400 font-bold' :
+              bWon ? 'font-bold text-foreground' :
               aWon ? 'text-muted-foreground font-normal' : 'text-foreground',
             )}>
               {teamB?.short_name ?? teamB?.name ?? '—'}
             </span>
             <span className={cn('font-mono font-bold text-sm tabular-nums shrink-0',
-              bWon ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/60',
+              bWon ? 'font-bold text-foreground' : 'text-muted-foreground/50',
             )}>
               {teamMatch.team_b_score}
             </span>
@@ -2139,9 +2139,9 @@ function TeamMatchAdminCard({
                           smDone ? 'text-foreground' : smLive ? 'text-orange-500' : 'text-muted-foreground',
                         )}>
                           {smLive && <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse shrink-0" />}
-                          <span className={smAWon ? 'text-emerald-600 dark:text-emerald-400' : ''}>{p1g}</span>
+                          <span className={smAWon ? 'font-bold text-foreground' : 'text-muted-foreground/50'}>{p1g}</span>
                           <span className="text-muted-foreground/60">–</span>
-                          <span className={smBWon ? 'text-emerald-600 dark:text-emerald-400' : ''}>{p2g}</span>
+                          <span className={smBWon ? 'font-bold text-foreground' : 'text-muted-foreground/50'}>{p2g}</span>
                           {smDone && <Check className="h-3 w-3 text-emerald-500 ml-0.5" />}
                         </div>
                       )}
@@ -2416,10 +2416,9 @@ function BulkImportDialog({
                 href="https://drive.google.com/drive/folders/1r45xuGSDsa7Y4Q0DdVkirbvqnUE4E_Pq?usp=sharing"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-1 text-xs font-semibold text-orange-600 hover:text-orange-700 dark:text-orange-400 shrink-0 transition-colors"
+                className="download-samples-btn inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border-2 bg-red-600 text-white text-xs font-bold hover:bg-red-700 transition-colors shrink-0"
               >
-                <Upload className="h-3 w-3" />
-                Download Samples
+                ⬇ Download Samples
               </a>
             </div>
             <code className="text-xs font-mono text-orange-600 dark:text-orange-400">

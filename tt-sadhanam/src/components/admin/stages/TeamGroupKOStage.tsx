@@ -527,10 +527,9 @@ function BulkImportDialog({ tournamentId, existingTeamCount, isCorbillon, onClos
                 href="https://drive.google.com/drive/folders/1r45xuGSDsa7Y4Q0DdVkirbvqnUE4E_Pq?usp=sharing"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-1 text-xs font-semibold text-orange-600 hover:text-orange-700 dark:text-orange-400 transition-colors shrink-0"
+                className="download-samples-btn inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border-2 bg-red-600 text-white text-xs font-bold hover:bg-red-700 transition-colors shrink-0"
               >
-                <Upload className="h-3 w-3" />
-                Download Samples
+                ⬇ Download Samples
               </a>
             </div>
             <code className="text-xs font-mono text-orange-600 dark:text-orange-400">
@@ -1233,7 +1232,7 @@ function FixtureDetailPanel({
                       />
                     ) : (
                       <span className={cn('text-sm font-semibold truncate',
-                        aWon ? 'text-emerald-600 dark:text-emerald-400' : bWon ? 'text-muted-foreground' : '',
+                        aWon ? 'font-semibold text-foreground' : bWon ? 'text-muted-foreground' : '',
                       )}>{sm.player_a_name ?? '—'}</span>
                     )}
                   </div>
@@ -1254,7 +1253,7 @@ function FixtureDetailPanel({
                       />
                     ) : (
                       <span className={cn('text-sm font-semibold truncate',
-                        bWon ? 'text-emerald-600 dark:text-emerald-400' : aWon ? 'text-muted-foreground' : '',
+                        bWon ? 'font-semibold text-foreground' : aWon ? 'text-muted-foreground' : '',
                       )}>{sm.player_b_name ?? '—'}</span>
                     )}
                   </div>
@@ -1265,9 +1264,9 @@ function FixtureDetailPanel({
                         isRubberDone ? 'text-foreground' : smLive ? 'text-orange-500' : 'text-muted-foreground/50',
                       )}>
                         {smLive && <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse shrink-0" />}
-                        <span className={aWon ? 'text-emerald-600 dark:text-emerald-400' : ''}>{p1g}</span>
+                        <span className={aWon ? 'font-bold text-foreground' : 'text-muted-foreground/50'}>{p1g}</span>
                         <span className="text-muted-foreground/40">–</span>
-                        <span className={bWon ? 'text-emerald-600 dark:text-emerald-400' : ''}>{p2g}</span>
+                        <span className={bWon ? 'font-bold text-foreground' : 'text-muted-foreground/50'}>{p2g}</span>
                         {isRubberDone && <Check className="h-3 w-3 text-emerald-500 ml-0.5" />}
                       </div>
                     )}
@@ -1320,9 +1319,9 @@ function FixtureDetailPanel({
                 </span>
                 {isRubberDone ? (
                   <span className="text-xs font-semibold font-mono shrink-0">
-                    <span className={cn(aWon ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/50')}>{p1g}</span>
+                    <span className={cn(aWon ? 'font-bold text-foreground' : 'text-muted-foreground/50')}>{p1g}</span>
                     <span className="text-muted-foreground mx-0.5">–</span>
-                    <span className={cn(bWon ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/50')}>{p2g}</span>
+                    <span className={cn(bWon ? 'font-bold text-foreground' : 'text-muted-foreground/50')}>{p2g}</span>
                   </span>
                 ) : (
                   <span className="text-[10px] text-muted-foreground/40 shrink-0">pending</span>
@@ -1717,14 +1716,14 @@ function GroupsTab({
                                           ? <span className="text-amber-500 text-xs shrink-0">🏆</span>
                                           : <span className="w-3.5 shrink-0" />}
                                         <span className={cn('text-sm truncate',
-                                          isComplete && m.winner_team_id === m.team_a_id ? 'font-bold text-emerald-600 dark:text-emerald-400' :
+                                          isComplete && m.winner_team_id === m.team_a_id ? 'font-bold text-foreground' :
                                           isComplete ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground')}>
                                           {m.team_a_name ?? <span className="italic text-muted-foreground/50">TBD</span>}
                                         </span>
                                       </div>
                                       {/* Team A score — centre column */}
                                       <span className={cn('font-mono font-bold text-lg tabular-nums text-center self-center',
-                                        isComplete && m.winner_team_id === m.team_a_id ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/60')}>
+                                        isComplete && m.winner_team_id === m.team_a_id ? 'text-foreground' : isComplete ? 'text-muted-foreground/50' : 'text-muted-foreground/60')}>
                                         {m.team_a_score}
                                       </span>
                                       {/* Action column — progress + chevron */}
@@ -1741,14 +1740,14 @@ function GroupsTab({
                                           ? <span className="text-amber-500 text-xs shrink-0">🏆</span>
                                           : <span className="w-3.5 shrink-0" />}
                                         <span className={cn('text-sm truncate',
-                                          isComplete && m.winner_team_id === m.team_b_id ? 'font-bold text-emerald-600 dark:text-emerald-400' :
+                                          isComplete && m.winner_team_id === m.team_b_id ? 'font-bold text-foreground' :
                                           isComplete ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground')}>
                                           {m.team_b_name ?? <span className="italic text-muted-foreground/50">TBD</span>}
                                         </span>
                                       </div>
                                       {/* Team B score */}
                                       <span className={cn('font-mono font-bold text-lg tabular-nums text-center self-center',
-                                        isComplete && m.winner_team_id === m.team_b_id ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/60')}>
+                                        isComplete && m.winner_team_id === m.team_b_id ? 'text-foreground' : isComplete ? 'text-muted-foreground/50' : 'text-muted-foreground/60')}>
                                         {m.team_b_score}
                                       </span>
                                       <span />{/* empty action column */}
@@ -1858,12 +1857,12 @@ function KOMatchCard({ match, teams, isCorbillon, tournament, highlightFix, load
               <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: match.team_a_color }} />
               <WinnerTrophy show={aWon} size="sm" />
               <span className={cn('text-sm truncate flex-1',
-                aWon ? 'font-bold text-emerald-600 dark:text-emerald-400' : bWon ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground',
+                aWon ? 'font-bold text-foreground' : bWon ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground',
               )}>
                 {match.team_a_name ?? <span className="text-muted-foreground/40 italic">TBD</span>}
               </span>
               <span className={cn('font-mono font-bold tabular-nums text-base',
-                isDone ? 'text-foreground' : 'text-muted-foreground/60',
+                aWon ? 'text-foreground' : isDone ? 'text-muted-foreground/50' : 'text-muted-foreground/60',
               )}>{match.team_a_score}</span>
             </div>
             <div className="flex items-center gap-1 my-0.5 ml-9">
@@ -1874,12 +1873,12 @@ function KOMatchCard({ match, teams, isCorbillon, tournament, highlightFix, load
               <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: match.team_b_color }} />
               <WinnerTrophy show={bWon} size="sm" />
               <span className={cn('text-sm truncate flex-1',
-                bWon ? 'font-bold text-emerald-600 dark:text-emerald-400' : aWon ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground',
+                bWon ? 'font-bold text-foreground' : aWon ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground',
               )}>
                 {match.team_b_name ?? <span className="text-muted-foreground/40 italic">TBD</span>}
               </span>
               <span className={cn('font-mono font-bold tabular-nums text-base',
-                isDone ? 'text-foreground' : 'text-muted-foreground/60',
+                bWon ? 'text-foreground' : isDone ? 'text-muted-foreground/50' : 'text-muted-foreground/60',
               )}>{match.team_b_score}</span>
             </div>
             {/* Status row */}
