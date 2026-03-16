@@ -174,7 +174,7 @@ export function PublicTeamLeagueView({ tournament }: Props) {
 
   if (teamMatches.length === 0) {
     return (
-      <div className="mx-auto max-w-3xl px-4 sm:px-6 py-12 text-center text-muted-foreground">
+      <div className="mx-auto max-w-5xl px-4 sm:px-6 py-12 text-center text-muted-foreground">
         <div className="text-4xl mb-3">🏓</div>
         <p className="font-semibold text-foreground">Team schedule not yet generated</p>
         <p className="text-sm mt-1">Check back once the organizer has set up the fixtures.</p>
@@ -187,7 +187,7 @@ export function PublicTeamLeagueView({ tournament }: Props) {
   const liveCount  = teamMatches.filter(m => m.status === 'live').length
 
   return (
-    <div className="mx-auto max-w-3xl px-4 sm:px-6 py-6 flex flex-col gap-6">
+    <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6 flex flex-col gap-6">
       {/* Progress */}
       <div className="bg-card rounded-xl border border-border p-4">
         <div className="flex items-center justify-between mb-2">

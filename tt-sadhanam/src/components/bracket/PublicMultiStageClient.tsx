@@ -76,7 +76,7 @@ export function PublicMultiStageClient({
   const koLive = koMatches.some(m => m.status === 'live')
 
   return (
-    <main className="flex-1 mx-auto w-full max-w-6xl px-4 sm:px-6 py-6">
+    <main className="flex-1 mx-auto w-full max-w-7xl px-4 sm:px-6 py-6">
       {/* Stage status banner */}
       {stage1Complete && !hasKO && (
         <div className="mb-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 flex items-center gap-3">
@@ -373,7 +373,7 @@ function PublicFixtureRow({ match: m }: { match: Match }) {
   return (
     <div className={cn(
       'flex flex-col rounded-lg border text-sm',
-      isComplete && 'bg-muted/20 border-border/40 opacity-80',
+      isComplete && 'bg-slate-100/80 dark:bg-slate-800/40 border-border/40',
       isLive     && 'border-orange-400/70 bg-orange-50/50 dark:bg-orange-950/15 shadow-sm',
       !isComplete && !isLive && 'bg-card border-border',
     )}>

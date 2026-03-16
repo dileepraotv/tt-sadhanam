@@ -476,7 +476,7 @@ function PublicKOCard({ match }: { match: TeamMatchRow }) {
         onClick={() => setExpanded(e => !e)}
       >
         {/* Team A */}
-        <div className={cn('flex items-center gap-2', isComplete && match.winner_team_id !== match.team_a_id && 'opacity-50')}>
+        <div className={cn('flex items-center gap-2', isComplete && match.winner_team_id !== match.team_a_id && 'text-muted-foreground/60')}>
           <WinnerTrophy show={isComplete && match.winner_team_id === match.team_a_id} />
           <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: (match.team_a as TeamRow | null)?.color ?? '#888' }} />
           <span className={cn('text-sm flex-1 truncate', isComplete && match.winner_team_id === match.team_a_id ? 'font-bold text-foreground' : isComplete ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground')}>{match.team_a?.name ?? 'TBD'}</span>
@@ -484,7 +484,7 @@ function PublicKOCard({ match }: { match: TeamMatchRow }) {
         </div>
         <div className="border-t border-border/30" />
         {/* Team B */}
-        <div className={cn('flex items-center gap-2', isComplete && match.winner_team_id !== match.team_b_id && 'opacity-50')}>
+        <div className={cn('flex items-center gap-2', isComplete && match.winner_team_id !== match.team_b_id && 'text-muted-foreground/60')}>
           <WinnerTrophy show={isComplete && match.winner_team_id === match.team_b_id} />
           <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: (match.team_b as TeamRow | null)?.color ?? '#888' }} />
           <span className={cn('text-sm flex-1 truncate', isComplete && match.winner_team_id === (match.team_b as TeamRow | null)?.id ? 'font-bold text-foreground' : isComplete ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground')}>{match.team_b?.name ?? 'TBD'}</span>
@@ -521,7 +521,7 @@ function PublicKOCard({ match }: { match: TeamMatchRow }) {
             return (
               <div key={sm.id} className={cn('px-3 py-2 text-xs',
                 smLive && 'bg-orange-50/30 dark:bg-orange-950/10',
-                smDone && 'opacity-80',
+                smDone && 'bg-muted/5',
               )}>
                 <div className="flex items-center gap-1 mb-0.5">
                   <span className={cn('text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center shrink-0',

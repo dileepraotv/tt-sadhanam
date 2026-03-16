@@ -207,7 +207,7 @@ export function PureRRStage({ tournament, players, matches, games, matchBase }: 
           const allDone  = doneMd === totalMd && totalMd > 0
 
           return (
-            <Card key={round} className={cn('overflow-hidden', allDone && 'opacity-80 bg-muted/10')}>
+            <Card key={round} className={cn('overflow-hidden', allDone && 'bg-slate-50/80 dark:bg-slate-800/30 border-border/40')}>
               <button
                 onClick={() => toggleRound(round)}
                 className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/30 transition-colors text-left"

@@ -9,7 +9,7 @@
  * Design rules (from MatchUI canonical tokens):
  *   - Winner: WINNER_NAME_CLS / WINNER_SCORE_CLS (emerald — same as admin card)
  *   - Loser:  LOSER_NAME_CLS  / LOSER_SCORE_CLS  (muted)
- *   - Complete: opacity-40 (same as admin MatchCard — standardized dimming)
+ *   - Complete: grey card bg (bg-slate-100) — full readability, no opacity
  *   - Live:  orange border + bg tint + LiveBadge (matches admin card)
  *   - Trophy: <WinnerTrophy /> component (never emoji — cross-platform issue)
  *   - Status pill: <MatchStatusBadge /> shared component
@@ -62,12 +62,12 @@ export function PublicMatchCard({ match, onMatchClick, compact = false, groupNam
         'relative rounded-xl border transition-all duration-150 overflow-hidden select-none',
         // Live: orange border + bg tint (matches admin MatchCard)
         isLive     && 'border-orange-400/70 bg-orange-50/30 dark:bg-orange-950/10 shadow-sm shadow-orange-200/40 dark:shadow-orange-900/20',
-        // Complete: opacity-40 (standardized — was "no opacity" in public card)
-        isComplete && 'border-border/40 bg-card opacity-40',
+        // Complete: grey background (no opacity — ensures full text readability)
+        isComplete && 'border-border/40 bg-slate-100/80 dark:bg-slate-800/40',
         // Pending
         match.status === 'pending' && 'border-border/40 bg-card',
         // Bye
-        isBye      && 'border-border/20 opacity-50',
+        isBye      && 'border-border/20 bg-muted/10',
         isClickable && 'cursor-pointer hover:border-orange-400 hover:shadow-md hover:shadow-orange-100/40 active:scale-[0.99]',
         compact ? 'px-3 py-2' : 'px-4 py-3',
       )}

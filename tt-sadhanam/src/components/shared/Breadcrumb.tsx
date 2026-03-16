@@ -30,8 +30,8 @@ export function Breadcrumb({ items, variant = 'public' }: Props) {
   if (items.length === 0) return null
 
   const bgClass = variant === 'admin'
-    ? 'bg-orange-800/25 border-orange-600/25'
-    : 'bg-orange-700/18 border-orange-500/20'
+    ? 'bg-orange-700/90 border-orange-600/50'
+    : 'bg-orange-600/85 border-orange-500/50'
 
   return (
     <nav
@@ -42,10 +42,10 @@ export function Breadcrumb({ items, variant = 'public' }: Props) {
         <ol className="flex items-center gap-1 flex-wrap">
           {/* Always prepend Home */}
           <li className="flex items-center gap-1 shrink-0">
-            <Link href="/" className="text-white/60 hover:text-white transition-colors">
+            <Link href="/" className="text-white/70 hover:text-white transition-colors">
               <Home className="h-3.5 w-3.5" />
             </Link>
-            <ChevronRight className="h-3.5 w-3.5 text-white/30 shrink-0" />
+            <ChevronRight className="h-3.5 w-3.5 text-white/40 shrink-0" />
           </li>
 
           {items.map((item, i) => {
@@ -61,16 +61,16 @@ export function Breadcrumb({ items, variant = 'public' }: Props) {
                     {item.href ? (
                       <Link
                         href={item.href}
-                        className="text-sm text-white/70 hover:text-white transition-colors truncate max-w-[150px]"
+                        className="text-sm text-white/80 hover:text-white transition-colors truncate max-w-[150px]"
                       >
                         {item.label}
                       </Link>
                     ) : (
-                      <span className="text-sm text-white/70 truncate max-w-[150px]">
+                      <span className="text-sm text-white/80 truncate max-w-[150px]">
                         {item.label}
                       </span>
                     )}
-                    <ChevronRight className="h-3.5 w-3.5 text-white/30 shrink-0" />
+                    <ChevronRight className="h-3.5 w-3.5 text-white/40 shrink-0" />
                   </>
                 )}
               </li>

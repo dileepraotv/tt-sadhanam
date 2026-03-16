@@ -1606,7 +1606,7 @@ function TeamMatchBracketCard({
   return (
     <div className={cn(
       'rounded-2xl border overflow-hidden transition-all duration-150',
-      isDone  && 'opacity-40 bg-muted/5 border-border/30',
+      isDone  && 'bg-slate-100/80 dark:bg-slate-800/40 border-border/40',
       isLive  && !isDone && 'bg-card border-orange-400 dark:border-orange-500 shadow-md shadow-orange-100 dark:shadow-orange-950/30',
       !isLive && !isDone && 'bg-card border-border',
       isHighlighted && 'ring-2 ring-orange-400/50',

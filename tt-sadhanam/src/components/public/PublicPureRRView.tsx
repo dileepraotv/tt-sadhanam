@@ -98,7 +98,7 @@ export function PublicPureRRView({ tournament, matches: initialMatches, players 
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-4 sm:px-6 py-6 flex flex-col gap-6">
+    <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6 flex flex-col gap-6">
       {/* Progress bar */}
       <div className="bg-card rounded-xl border border-border p-4">
         <div className="flex items-center justify-between mb-2">
@@ -136,7 +136,7 @@ export function PublicPureRRView({ tournament, matches: initialMatches, players 
           const allDone = done === total && total > 0
 
           return (
-            <div key={round} className={cn('bg-card rounded-xl border border-border overflow-hidden', allDone && 'opacity-80')}>
+            <div key={round} className={cn('bg-card rounded-xl border border-border overflow-hidden', allDone && 'bg-slate-50/80 dark:bg-slate-800/30 border-border/40')}>
               <button
                 onClick={() => toggleRound(round)}
                 className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors text-left"

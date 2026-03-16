@@ -49,9 +49,9 @@ export function TeamMatchCard({ teamMatch, subMatchScores }: Props) {
     <div
       className={cn(
         'rounded-xl border overflow-hidden transition-colors',
-        isLive ? 'border-orange-400 dark:border-orange-500 bg-orange-50/30 dark:bg-orange-950/10' : 'border-border',
-        // Standardized: opacity-40 for done (was opacity-90 — too subtle)
-        isDone && 'opacity-40',
+        isLive  ? 'border-orange-400 dark:border-orange-500 bg-orange-50/30 dark:bg-orange-950/10' :
+        isDone  ? 'border-border/40 bg-slate-100/80 dark:bg-slate-800/40' :
+                  'border-border bg-card',
       )}
     >
       {/* Header row — click to expand */}
