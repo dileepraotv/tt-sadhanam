@@ -399,24 +399,24 @@ export async function updateSubmatchPlayers(input: {
     const byId = Object.fromEntries((rows ?? []).map(r => [r.id, r.name]))
 
     // For doubles, combine both player names: "P1 & P2"
-    const a1 = input.teamAPlayerId  ? (byId[input.teamAPlayerId]  ?? null) : null
-    const a2 = input.teamAPlayer2Id ? (byId[input.teamAPlayer2Id] ?? null) : null
-    const b1 = input.teamBPlayerId  ? (byId[input.teamBPlayerId]  ?? null) : null
-    const b2 = input.teamBPlayer2Id ? (byId[input.teamBPlayer2Id] ?? null) : null
+    const a1 = (input.teamAPlayerId  || null) ? (byId[input.teamAPlayerId!]  ?? null) : null
+    const a2 = (input.teamAPlayer2Id || null) ? (byId[input.teamAPlayer2Id!] ?? null) : null
+    const b1 = (input.teamBPlayerId  || null) ? (byId[input.teamBPlayerId!]  ?? null) : null
+    const b2 = (input.teamBPlayer2Id || null) ? (byId[input.teamBPlayer2Id!] ?? null) : null
 
     aName = a1 && a2 ? `${a1} & ${a2}` : (a1 ?? null)
     bName = b1 && b2 ? `${b1} & ${b2}` : (b1 ?? null)
   }
 
   const updatePayload: Record<string, unknown> = {
-    team_a_player_id:  input.teamAPlayerId,
-    team_b_player_id:  input.teamBPlayerId,
+    team_a_player_id:  input.teamAPlayerId  || null,
+    team_b_player_id:  input.teamBPlayerId  || null,
     player_a_name:     aName,
     player_b_name:     bName,
   }
   // Only write the doubles columns if the DB has them (graceful fallback)
-  if (input.teamAPlayer2Id !== undefined) updatePayload.team_a_player2_id = input.teamAPlayer2Id ?? null
-  if (input.teamBPlayer2Id !== undefined) updatePayload.team_b_player2_id = input.teamBPlayer2Id ?? null
+  if (input.teamAPlayer2Id !== undefined) updatePayload.team_a_player2_id = input.teamAPlayer2Id || null
+  if (input.teamBPlayer2Id !== undefined) updatePayload.team_b_player2_id = input.teamBPlayer2Id || null
 
   const { error } = await supabase
     .from('team_match_submatches')
@@ -468,22 +468,28 @@ export async function batchUpdateSubmatchPlayers(input: {
 
   // Update each submatch row
   for (const s of input.submatches) {
-    const a1 = s.teamAPlayerId  ? (byId[s.teamAPlayerId]  ?? null) : null
-    const a2 = s.teamAPlayer2Id ? (byId[s.teamAPlayer2Id] ?? null) : null
-    const b1 = s.teamBPlayerId  ? (byId[s.teamBPlayerId]  ?? null) : null
-    const b2 = s.teamBPlayer2Id ? (byId[s.teamBPlayer2Id] ?? null) : null
+    // Coerce empty strings → null so FK columns never receive an invalid UUID
+    const aId  = s.teamAPlayerId  || null
+    const bId  = s.teamBPlayerId  || null
+    const a2Id = s.teamAPlayer2Id || null
+    const b2Id = s.teamBPlayer2Id || null
+
+    const a1 = aId  ? (byId[aId]  ?? null) : null
+    const a2 = a2Id ? (byId[a2Id] ?? null) : null
+    const b1 = bId  ? (byId[bId]  ?? null) : null
+    const b2 = b2Id ? (byId[b2Id] ?? null) : null
 
     const aName = a1 && a2 ? `${a1} & ${a2}` : (a1 ?? null)
     const bName = b1 && b2 ? `${b1} & ${b2}` : (b1 ?? null)
 
     const payload: Record<string, unknown> = {
-      team_a_player_id: s.teamAPlayerId,
-      team_b_player_id: s.teamBPlayerId,
+      team_a_player_id: aId,
+      team_b_player_id: bId,
       player_a_name:    aName,
       player_b_name:    bName,
     }
-    if (s.teamAPlayer2Id !== undefined) payload.team_a_player2_id = s.teamAPlayer2Id ?? null
-    if (s.teamBPlayer2Id !== undefined) payload.team_b_player2_id = s.teamBPlayer2Id ?? null
+    if (s.teamAPlayer2Id !== undefined) payload.team_a_player2_id = a2Id
+    if (s.teamBPlayer2Id !== undefined) payload.team_b_player2_id = b2Id
 
     const { error } = await supabase
       .from('team_match_submatches')

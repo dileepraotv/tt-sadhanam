@@ -1140,12 +1140,17 @@ function FixtureDetailPanel({
     setSavingLineup(true)
     const submatches = match.submatches.map(sm => {
       const edit = lineupEdits.get(sm.id)
+      // Coerce "" → null so FK columns never receive an invalid UUID
+      const aId  = (edit ? edit[0] : sm.team_a_player_id)  || null
+      const bId  = (edit ? edit[1] : sm.team_b_player_id)  || null
+      const a2Id = (edit ? edit[2] : sm.team_a_player2_id) || null
+      const b2Id = (edit ? edit[3] : sm.team_b_player2_id) || null
       return {
         submatchId:      sm.id,
-        teamAPlayerId:   edit ? edit[0] : sm.team_a_player_id,
-        teamBPlayerId:   edit ? edit[1] : sm.team_b_player_id,
-        teamAPlayer2Id:  edit ? edit[2] : sm.team_a_player2_id,
-        teamBPlayer2Id:  edit ? edit[3] : sm.team_b_player2_id,
+        teamAPlayerId:   aId,
+        teamBPlayerId:   bId,
+        teamAPlayer2Id:  a2Id,
+        teamBPlayer2Id:  b2Id,
       }
     })
     const res = await batchUpdateSubmatchPlayers({ tournamentId: tournament.id, submatches })

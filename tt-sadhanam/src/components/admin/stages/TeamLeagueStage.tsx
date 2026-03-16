@@ -1583,10 +1583,10 @@ function TeamMatchBracketCard({
         tournamentId,
         submatches: subs.map(s => ({
           submatchId:     s.id,
-          teamAPlayerId:  draft[s.id]?.teamAPlayerId  ?? null,
-          teamBPlayerId:  draft[s.id]?.teamBPlayerId  ?? null,
-          teamAPlayer2Id: draft[s.id]?.teamAPlayer2Id ?? null,
-          teamBPlayer2Id: draft[s.id]?.teamBPlayer2Id ?? null,
+          teamAPlayerId:  draft[s.id]?.teamAPlayerId  || null,
+          teamBPlayerId:  draft[s.id]?.teamBPlayerId  || null,
+          teamAPlayer2Id: draft[s.id]?.teamAPlayer2Id || null,
+          teamBPlayer2Id: draft[s.id]?.teamBPlayer2Id || null,
         })),
       })
       setLoading(false)
@@ -1960,10 +1960,10 @@ function TeamMatchAdminCard({
         tournamentId,
         submatches: subs.map(s => ({
           submatchId:     s.id,
-          teamAPlayerId:  draft[s.id]?.teamAPlayerId  ?? null,
-          teamBPlayerId:  draft[s.id]?.teamBPlayerId  ?? null,
-          teamAPlayer2Id: draft[s.id]?.teamAPlayer2Id ?? null,
-          teamBPlayer2Id: draft[s.id]?.teamBPlayer2Id ?? null,
+          teamAPlayerId:  draft[s.id]?.teamAPlayerId  || null,
+          teamBPlayerId:  draft[s.id]?.teamBPlayerId  || null,
+          teamAPlayer2Id: draft[s.id]?.teamAPlayer2Id || null,
+          teamBPlayer2Id: draft[s.id]?.teamBPlayer2Id || null,
         })),
       })
       setLoading(false)
