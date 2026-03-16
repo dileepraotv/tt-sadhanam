@@ -241,7 +241,18 @@ export function ExcelUpload({ tournamentId, existingPlayers, onComplete }: Props
     return (
       <div className="flex flex-col gap-4">
         <div className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm">
-          <p className="font-medium mb-2">Expected columns (row 1 = headers)</p>
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <p className="font-medium">Expected columns (row 1 = headers)</p>
+            <a
+              href="https://drive.google.com/drive/folders/1r45xuGSDsa7Y4Q0DdVkirbvqnUE4E_Pq?usp=sharing"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 text-xs font-semibold text-orange-600 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300 transition-colors shrink-0"
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5" />
+              Download Samples
+            </a>
+          </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-muted-foreground">
             {[
               { col: 'Name',         note: 'Required' },

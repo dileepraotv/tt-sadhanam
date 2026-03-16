@@ -441,7 +441,7 @@ function BulkImportDialog({ tournamentId, existingTeamCount, isCorbillon, onClos
 }) {
   const [isPending, startTx]  = useTransition()
   const { setLoading }         = useLoading()
-  const [mode, setMode]        = useState<'text' | 'file'>('text')
+  const [mode, setMode]        = useState<'text' | 'file'>('file')
   const [pasteText, setPaste]  = useState('')
   const [preview, setPreview]  = useState<TeamImportRow[]>([])
   const [parseError, setErr]   = useState('')
@@ -521,7 +521,18 @@ function BulkImportDialog({ tournamentId, existingTeamCount, isCorbillon, onClos
         <CardContent className="flex flex-col gap-4">
           {/* Format guide */}
           <div className="rounded-lg bg-muted/40 border border-border p-3 flex flex-col gap-2">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Row format — one row per team</p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Row format — one row per team</p>
+              <a
+                href="https://drive.google.com/drive/folders/1r45xuGSDsa7Y4Q0DdVkirbvqnUE4E_Pq?usp=sharing"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-xs font-semibold text-orange-600 hover:text-orange-700 dark:text-orange-400 transition-colors shrink-0"
+              >
+                <Upload className="h-3 w-3" />
+                Download Samples
+              </a>
+            </div>
             <code className="text-xs font-mono text-orange-600 dark:text-orange-400">
               Team Name | Seed {playerCols} …
             </code>

@@ -127,7 +127,7 @@ export default async function PublicEventPage({ params }: PageProps) {
   const adminHref = `/admin/championships/${params.cid}/events/${params.eid}`
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="min-h-screen flex flex-col">
       {/* Header — admin sees ADMIN pill; public sees Viewer + sign-in */}
       <Header
         user={user}

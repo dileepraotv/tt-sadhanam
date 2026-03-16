@@ -65,7 +65,7 @@ interface GroupRow {
 // ─── in-memory standings ─────────────────────────────────────────────────────
 
 function computeStandings(groupId: string, teamIds: string[], matches: TeamMatchRow[]) {
-  const map = new Map(teamIds.map(id => [id, { teamId: id, mW: 0, mL: 0, smW: 0, gd: 0 }]))
+  const map = new Map(teamIds.map(id => [id, { teamId: id, mW: 0, mL: 0, smW: 0, smL: 0, gd: 0 }]))
   for (const m of matches) {
     if (m.group_id !== groupId || m.status !== 'complete') continue
     const sA = map.get(m.team_a_id)
@@ -75,8 +75,9 @@ function computeStandings(groupId: string, teamIds: string[], matches: TeamMatch
     for (const sm of m.submatches) {
       const sc = sm.scoring
       if (!sc || sc.status !== 'complete') continue
-      if (sA) { sA.smW += sc.player1_games > sc.player2_games ? 1 : 0; sA.gd += sc.player1_games - sc.player2_games }
-      if (sB) { sB.smW += sc.player2_games > sc.player1_games ? 1 : 0; sB.gd += sc.player2_games - sc.player1_games }
+      const aWon = sc.player1_games > sc.player2_games
+      if (sA) { sA.smW += aWon ? 1 : 0; sA.smL += aWon ? 0 : 1; sA.gd += sc.player1_games - sc.player2_games }
+      if (sB) { sB.smW += aWon ? 0 : 1; sB.smL += aWon ? 1 : 0; sB.gd += sc.player2_games - sc.player1_games }
     }
   }
   return [...map.values()].sort((a, b) => b.mW - a.mW || b.smW - a.smW || b.gd - a.gd)
@@ -96,6 +97,7 @@ export function PublicTeamGroupKOView({ tournament }: { tournament: Tournament }
   const [loading,     setLoading]     = useState(true)
   const [tab,         setTab]         = useState<'groups' | 'knockout'>('groups')
   const [expandedGroup, setExpandedGroup] = useState<string | null>(null)
+  const [activeKORound, setActiveKORound] = useState<number | null>(null)
 
   const loadData = async () => {
     // 3 fully-parallel queries — rr_groups embedded in stage select (no serial 4th trip)
@@ -203,7 +205,7 @@ export function PublicTeamGroupKOView({ tournament }: { tournament: Tournament }
         ))}
       </div>
 
-      <div className="p-4 sm:p-6">
+      <div className="page-content flex flex-col gap-4">
         {/* ── Groups tab ── */}
         {tab === 'groups' && (
           <div className="flex flex-col gap-4">
@@ -216,75 +218,84 @@ export function PublicTeamGroupKOView({ tournament }: { tournament: Tournament }
               const groupMats   = rrMatches.filter(m => m.group_id === group.id)
               const isExpanded  = expandedGroup === group.id
               const allDone     = groupMats.length > 0 && groupMats.every(m => m.status === 'complete')
+              const hasStarted  = standings.some(r => r.mW + r.mL > 0)
 
               return (
                 <div key={group.id} className={cn(
                   'rounded-xl border overflow-hidden',
-                  allDone ? 'border-border/40 bg-muted/10' : 'border-border bg-card',
+                  allDone ? 'border-border/40 bg-slate-100/80 dark:bg-slate-800/40' : 'border-border bg-card',
                 )}>
-                  {/* Group header */}
-                  <button
-                    className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-muted/30 transition-colors"
-                    onClick={() => setExpandedGroup(isExpanded ? null : group.id)}
-                  >
-                    <div className="flex items-center gap-2">
-                      {isExpanded
-                        ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                        : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
-                      <span className="font-semibold text-sm">{group.name}</span>
-                      <span className="text-xs text-muted-foreground hidden sm:inline">
-                        {group.teamIds.map(id => (teamById.get(id) as TeamRow | undefined)?.name ?? '?').join(' · ')}
+                  {/* Group header — always visible */}
+                  <div className="px-4 pt-3 pb-0">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-sm text-foreground">{group.name}</span>
+                        {groupMats.some(m => m.status === 'live') && <span className="live-dot" />}
+                        {allDone && <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">✓ Complete</span>}
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {groupMats.filter(m => m.status === 'complete').length}/{groupMats.length} done
                       </span>
                     </div>
-                    <span className="text-xs text-muted-foreground">
-                      {groupMats.filter(m => m.status === 'complete').length}/{groupMats.length} done
+
+                    {/* Standings — always visible */}
+                    <div className="flex flex-col gap-0.5 mb-2">
+                      {standings.map((row, idx) => {
+                        const t   = teamById.get(row.teamId) as TeamRow | undefined
+                        const adv = idx < advanceCount
+                        return (
+                          <div key={row.teamId} className={cn(
+                            'flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm',
+                            adv && hasStarted ? 'bg-emerald-50/60 dark:bg-emerald-950/20' : '',
+                          )}>
+                            <span className={cn(
+                              'text-xs font-bold w-4 text-center shrink-0',
+                              adv && hasStarted ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground',
+                            )}>{idx + 1}</span>
+                            <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: t?.color ?? '#888' }} />
+                            <span className={cn(
+                              'flex-1 min-w-0 truncate',
+                              idx === 0 && hasStarted ? 'font-semibold text-foreground' : 'text-foreground',
+                            )}>{t?.name ?? '?'}</span>
+                            <div className="flex items-center gap-3 shrink-0">
+                              <span className="text-xs font-mono tabular-nums" title="Matches Won-Lost">
+                                <span className={cn('font-bold', row.mW > 0 ? 'text-foreground' : 'text-muted-foreground/40')}>{row.mW}</span>
+                                <span className="text-muted-foreground/40">-{row.mL}</span>
+                              </span>
+                              <span className="text-xs font-mono tabular-nums text-muted-foreground" title="Rubbers Won-Lost">
+                                {row.smW}-{row.smL ?? 0}
+                              </span>
+                            </div>
+                            {adv && hasStarted && <ArrowRight className="h-3 w-3 text-emerald-500 shrink-0" />}
+                          </div>
+                        )
+                      })}
+                    </div>
+                    {hasStarted && (
+                      <p className="text-[10px] text-muted-foreground mb-2 px-1">
+                        Top {advanceCount} advance · W-L = Matches · Rubbers W-L
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Fixtures toggle */}
+                  <button
+                    className="w-full flex items-center justify-between px-4 py-2 border-t border-border/40 bg-muted/20 hover:bg-muted/30 transition-colors text-left"
+                    onClick={() => setExpandedGroup(isExpanded ? null : group.id)}
+                  >
+                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      {isExpanded ? 'Hide Fixtures' : 'Show Fixtures'}
                     </span>
+                    {isExpanded
+                      ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                      : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
                   </button>
 
                   {isExpanded && (
-                    <div className="border-t border-border/40 px-4 pb-4 flex flex-col gap-4 pt-3">
-                      {/* Standings */}
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="text-xs text-muted-foreground border-b border-border">
-                              <th className="text-left py-1.5 font-medium w-6">#</th>
-                              <th className="text-left py-1.5 font-medium">Team</th>
-                              <th className="text-center py-1.5 font-medium w-10">MW</th>
-                              <th className="text-center py-1.5 font-medium w-10">ML</th>
-                              <th className="text-center py-1.5 font-medium w-12">Ties</th>
-                              <th className="text-center py-1.5 font-medium w-12">GD</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {standings.map((row, idx) => {
-                              const t  = teamById.get(row.teamId) as TeamRow | undefined
-                              const adv = idx < advanceCount
-                              return (
-                                <tr key={row.teamId} className={cn('border-b border-border/30', adv && 'bg-emerald-50/60 dark:bg-emerald-950/20')}>
-                                  <td className="py-1.5 text-xs text-muted-foreground">{idx + 1}</td>
-                                  <td className="py-1.5">
-                                    <div className="flex items-center gap-1.5">
-                                      <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: t?.color ?? '#888' }} />
-                                      <span className="font-medium truncate">{t?.name ?? '?'}</span>
-                                      {adv && <span title="Advances to knockout"><ArrowRight className="h-3 w-3 text-emerald-500 shrink-0" /></span>}
-                                    </div>
-                                  </td>
-                                  <td className="py-1.5 text-center font-mono font-semibold">{row.mW}</td>
-                                  <td className="py-1.5 text-center font-mono text-muted-foreground">{row.mL}</td>
-                                  <td className="py-1.5 text-center font-mono">{row.smW}</td>
-                                  <td className="py-1.5 text-center font-mono">{row.gd > 0 ? `+${row.gd}` : row.gd}</td>
-                                </tr>
-                              )
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-
+                    <div className="px-4 pb-4 flex flex-col gap-4 pt-3">
                       {/* Fixtures */}
                       {groupMats.length > 0 && (
                         <div className="flex flex-col gap-2">
-                          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Fixtures</h4>
                           {groupMats.map(m => (
                             <PublicFixtureRow key={m.id} match={m} />
                           ))}
@@ -320,26 +331,69 @@ export function PublicTeamGroupKOView({ tournament }: { tournament: Tournament }
               <p className="text-sm text-muted-foreground text-center py-8">
                 Knockout bracket not yet generated.
               </p>
-            ) : (
-              (() => {
-                const roundMap = new Map<number, TeamMatchRow[]>()
-                for (const m of koMatches) {
-                  const arr = roundMap.get(m.round) ?? []
-                  arr.push(m)
-                  roundMap.set(m.round, arr)
-                }
-                return [...roundMap.entries()].sort((a, b) => a[0] - b[0]).map(([roundN, ms]) => (
-                  <div key={roundN} className="flex flex-col gap-2">
-                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-                      {ms[0]?.round_name ?? `Round ${roundN - 899}`}
-                    </h3>
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                      {ms.map(m => <PublicKOCard key={m.id} match={m} />)}
-                    </div>
+            ) : (() => {
+              const koRoundMap = new Map<number, TeamMatchRow[]>()
+              for (const m of koMatches) {
+                const arr = koRoundMap.get(m.round) ?? []
+                arr.push(m)
+                koRoundMap.set(m.round, arr)
+              }
+              const rounds = [...koRoundMap.entries()].sort((a, b) => a[0] - b[0])
+              // Auto-select: live round > first pending > last round
+              const liveR = rounds.find(([, ms]) => ms.some(m => m.status === 'live'))
+              const pendR = rounds.find(([, ms]) => ms.some(m => m.status === 'pending'))
+              const defR  = liveR?.[0] ?? pendR?.[0] ?? rounds[rounds.length - 1]?.[0] ?? null
+              const display = activeKORound ?? defR
+              return (
+                <div className="bg-card rounded-xl border border-border overflow-hidden">
+                  {/* Orange tab bar */}
+                  <div
+                    className="flex items-end gap-1 overflow-x-auto scrollbar-hide border-b-2 px-2 pt-2"
+                    style={{ borderColor: '#F06321' }}
+                  >
+                    {rounds.map(([roundN, ms]) => {
+                      const isActive = display === roundN
+                      const hasLive  = ms.some(m => m.status === 'live')
+                      const allDone  = ms.every(m => m.status === 'complete')
+                      const label    = ms[0]?.round_name ?? `Round ${roundN - 899}`
+                      return (
+                        <button
+                          key={roundN}
+                          onClick={() => setActiveKORound(roundN)}
+                          style={isActive
+                            ? { background: '#F06321', color: '#fff', border: '2px solid #F06321', borderBottom: 'none' }
+                            : undefined}
+                          className={cn(
+                            'shrink-0 px-4 pt-2 pb-2 text-sm font-bold transition-all rounded-t-lg whitespace-nowrap flex items-center gap-1.5',
+                            !isActive && 'text-muted-foreground hover:text-foreground hover:bg-muted/60',
+                          )}
+                        >
+                          {label}
+                          {hasLive && (
+                            <span className="inline-flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold"
+                              style={{ background: isActive ? 'rgba(255,255,255,0.35)' : '#F06321', color: '#fff' }}>
+                              ●
+                            </span>
+                          )}
+                          {allDone && !hasLive && (
+                            <span className={cn('text-[10px] font-bold', isActive ? 'text-white/80' : 'text-emerald-500')}>✓</span>
+                          )}
+                        </button>
+                      )
+                    })}
                   </div>
-                ))
-              })()
-            )}
+                  {/* Active round matches */}
+                  {display != null && (() => {
+                    const ms = koRoundMap.get(display) ?? []
+                    return (
+                      <div className="p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        {ms.map(m => <PublicKOCard key={m.id} match={m} />)}
+                      </div>
+                    )
+                  })()}
+                </div>
+              )
+            })()}
           </div>
         )}
       </div>

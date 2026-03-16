@@ -20,7 +20,7 @@ interface PlayerManagerProps {
 }
 
 export function PlayerManager({ tournament, players }: PlayerManagerProps) {
-  const [mode, setMode]         = useState<'single' | 'bulk' | 'excel'>('single')
+  const [mode, setMode]         = useState<'single' | 'bulk' | 'excel'>('excel')
   const [name, setName]         = useState('')
   const [club, setClub]         = useState('')
   const [seed, setSeed]         = useState<string>('')
