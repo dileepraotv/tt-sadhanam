@@ -9,11 +9,12 @@ import { useMemo, useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Trophy } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { Tournament, Match, Player, Game } from '@/lib/types'
+import type { Tournament, Match, Player } from '@/lib/types'
 import type { PlayerStanding } from '@/lib/roundrobin/types'
 import { createClient } from '@/lib/supabase/client'
 import { LeagueStandingsTable } from '@/components/league/StandingsTable'
 import { PublicMatchCard } from '@/components/public/PublicMatchCard'
+import { computeLeagueStandings } from '@/lib/roundrobin/standings'
 
 interface Props {
   tournament: Tournament
@@ -47,7 +48,7 @@ export function PublicPureRRView({ tournament, matches: initialMatches, players 
   )
   const allGames = useMemo(() => rrMatches.flatMap(m => m.games ?? []), [rrMatches])
   const standings: PlayerStanding[] = useMemo(
-    () => computeLeagueStandingsLocal(players, rrMatches, allGames),
+    () => computeLeagueStandings(players, rrMatches, allGames),
     [players, rrMatches, allGames],
   )
 
@@ -164,44 +165,3 @@ export function PublicPureRRView({ tournament, matches: initialMatches, players 
   )
 }
 
-// ── Local standings computation ───────────────────────────────────────────────
-
-function computeLeagueStandingsLocal(players: Player[], matches: Match[], games: Game[]): PlayerStanding[] {
-  const acc = new Map<string, {
-    playerId: string; playerName: string; playerSeed: number | null; playerClub: string | null
-    matchesPlayed: number; wins: number; losses: number
-    gamesWon: number; gamesLost: number; pointsScored: number; pointsConceded: number
-  }>()
-  for (const p of players) {
-    acc.set(p.id, { playerId: p.id, playerName: p.name, playerSeed: p.seed, playerClub: p.club,
-      matchesPlayed: 0, wins: 0, losses: 0, gamesWon: 0, gamesLost: 0, pointsScored: 0, pointsConceded: 0 })
-  }
-  const gamesByMatch = new Map<string, Game[]>()
-  for (const g of games) {
-    if (!gamesByMatch.has(g.match_id)) gamesByMatch.set(g.match_id, [])
-    gamesByMatch.get(g.match_id)!.push(g)
-  }
-  for (const m of matches) {
-    if (m.status !== 'complete' || !m.player1_id || !m.player2_id) continue
-    const p1 = acc.get(m.player1_id), p2 = acc.get(m.player2_id)
-    if (!p1 || !p2) continue
-    p1.matchesPlayed++; p2.matchesPlayed++
-    if (m.winner_id === m.player1_id) { p1.wins++; p2.losses++ }
-    else if (m.winner_id === m.player2_id) { p2.wins++; p1.losses++ }
-    p1.gamesWon += m.player1_games; p1.gamesLost += m.player2_games
-    p2.gamesWon += m.player2_games; p2.gamesLost += m.player1_games
-    for (const g of (gamesByMatch.get(m.id) ?? [])) {
-      const s1 = g.score1 ?? 0, s2 = g.score2 ?? 0
-      p1.pointsScored += s1; p1.pointsConceded += s2
-      p2.pointsScored += s2; p2.pointsConceded += s1
-    }
-  }
-  return [...acc.values()]
-    .map(a => ({ ...a, gameDifference: a.gamesWon - a.gamesLost,
-      pointsDifference: a.pointsScored - a.pointsConceded, rank: 0, advances: false }))
-    .sort((a, b) => b.wins !== a.wins ? b.wins - a.wins :
-      b.gameDifference !== a.gameDifference ? b.gameDifference - a.gameDifference :
-      b.pointsDifference !== a.pointsDifference ? b.pointsDifference - a.pointsDifference :
-      a.playerId < b.playerId ? -1 : 1)
-    .map((s, i) => ({ ...s, rank: i + 1, advances: false }))
-}

@@ -608,8 +608,11 @@ function GameRow({
   const isDeciding      = matchState.decidingGame === gameNum
 
   let scoreValid = true
+  let scoreErrorMsg = ''
   if (bothFilled && hasNumbers) {
-    scoreValid = validateGameScore({ score1: s1, score2: s2 }).ok
+    const vr = validateGameScore({ score1: s1, score2: s2 })
+    scoreValid = vr.ok
+    if (!vr.ok) scoreErrorMsg = vr.errors[0]?.message ?? 'Invalid score'
   }
 
   const saved_p1Won = savedGame
@@ -678,7 +681,7 @@ function GameRow({
       {bothFilled && hasNumbers && !scoreValid && (
         <div className="mt-1.5 ml-10 flex items-start gap-1.5 rounded-lg bg-destructive/10 border border-destructive/40 px-2.5 py-1.5">
           <AlertCircle className="h-3.5 w-3.5 text-destructive shrink-0 mt-0.5" />
-          <p className="text-xs text-destructive">Invalid — check scores (win by 2, min 11 points)</p>
+          <p className="text-xs text-destructive">{scoreErrorMsg}</p>
         </div>
       )}
       {savedGame && (savedGame.score1 ?? 0) >= 10 && (savedGame.score2 ?? 0) >= 10 && (

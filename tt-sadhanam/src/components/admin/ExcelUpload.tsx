@@ -26,22 +26,49 @@ interface Props {
   onComplete:      (count?: number) => void
 }
 
-const NAME_COLS  = ['name', 'player', 'player name', 'playername', 'full name', 'fullname']
-const CLUB_COLS  = ['club', 'country', 'country/club', 'club/country', 'country / club', 'club / country', 'association', 'team']
-const SEED_COLS  = ['seed', 'seeding', 'rank', 'ranking', 'seeded']
-const GROUP_COLS = ['group', 'group name', 'groupname', 'preferred group', 'group no', 'group number']
+const NAME_COLS  = ['name', 'player', 'player name', 'playername', 'full name', 'fullname', 'names', 'athlete']
+const CLUB_COLS  = [
+  'club', 'country', 'country/club', 'club/country', 'country / club', 'club / country',
+  'association', 'team', 'nation', 'nationality', 'federation', 'organisation', 'organization',
+  'club name', 'country name', 'country/club name', 'affiliation',
+]
+const SEED_COLS  = [
+  'seed', 'seeding', 'rank', 'ranking', 'seeded',
+  'seed no', 'seed no.', 'seed #', 'seed number', 'position', 'draw no', 'draw number',
+  'world ranking', 'wr', 'no', 'no.',
+]
+const GROUP_COLS = [
+  'group', 'group name', 'groupname', 'preferred group', 'group no', 'group number',
+  'grp', 'grp no', 'group no.', 'pool', 'section', 'division', 'bracket',
+]
 
 function detectColumns(headers: string[]) {
-  // Normalise: lowercase, trim, and strip any trailing parenthetical like "(optional)" or "(required)"
+  // Normalise: lowercase, trim, strip trailing parenthetical like "(optional)" or "(required)"
+  // Also strip leading/trailing punctuation and common suffixes
   const norm = headers.map(h =>
-    String(h ?? '').trim().toLowerCase().replace(/\s*\(.*?\)\s*$/, '').trim()
+    String(h ?? '').trim().toLowerCase()
+      .replace(/\s*\(.*?\)\s*$/, '')   // strip (optional), (required), etc.
+      .replace(/[_\-]+/g, ' ')            // underscores/dashes → spaces
+      .replace(/\s+/g, ' ')               // collapse whitespace
+      .trim()
   )
-  return {
-    nameIdx:  norm.findIndex(h => NAME_COLS.includes(h)),
-    clubIdx:  norm.findIndex(h => CLUB_COLS.includes(h)),
-    seedIdx:  norm.findIndex(h => SEED_COLS.includes(h)),
-    groupIdx: norm.findIndex(h => GROUP_COLS.includes(h)),
-  }
+
+  const nameIdx  = norm.findIndex(h => NAME_COLS.includes(h))
+  let   clubIdx  = norm.findIndex(h => CLUB_COLS.includes(h))
+  let   seedIdx  = norm.findIndex(h => SEED_COLS.includes(h))
+  let   groupIdx = norm.findIndex(h => GROUP_COLS.includes(h))
+
+  // Positional fallback: if a column header isn't recognised but the column is
+  // non-empty and comes after the name column, assign by position.
+  // Only kicks in when the column is not a recognised name for another purpose.
+  const nonEmpty = headers.map((h, i) => ({ i, norm: norm[i], hasValue: String(h ?? '').trim().length > 0 }))
+  const dataColCount = nonEmpty.filter(c => c.hasValue).length
+
+  if (nameIdx >= 0 && dataColCount >= 2 && clubIdx  === -1) clubIdx  = nameIdx + 1
+  if (nameIdx >= 0 && dataColCount >= 3 && seedIdx  === -1) seedIdx  = nameIdx + 2
+  if (nameIdx >= 0 && dataColCount >= 4 && groupIdx === -1) groupIdx = nameIdx + 3
+
+  return { nameIdx, clubIdx, seedIdx, groupIdx }
 }
 
 function parseGroup(raw: string | null | undefined): { value: number | null; error?: string } {
@@ -152,8 +179,10 @@ function parseSheetData(rawRows: string[][], existingNames: Set<string>) {
     let seed: number | null = null
     let seedError: string | undefined
     if (rawSeed) {
-      const n = parseInt(rawSeed, 10)
-      if (isNaN(n) || n < 1 || !Number.isInteger(n)) seedError = `"${rawSeed}" must be a positive integer`
+      // SheetJS may return floats like 1.0 for integer cells — use parseFloat + Math.round
+      const f = parseFloat(rawSeed)
+      const n = Math.round(f)
+      if (isNaN(n) || n < 1 || Math.abs(f - n) > 0.01) seedError = `"${rawSeed}" must be a positive integer`
       else if (seenSeeds.has(n)) seedError = `Seed ${n} used more than once`
       else { seed = n; seenSeeds.add(n) }
     }

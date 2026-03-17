@@ -71,7 +71,9 @@ export async function bulkAddPlayers(tournamentId: string, text: string): Promis
     .select('id', { count: 'exact', head: true })
     .eq('tournament_id', tournamentId)
   const rows = lines.map(line => {
-    const parts          = line.split('|').map(p => p.trim())
+    // Support pipe-separated (|), tab-separated (Excel paste), comma-separated
+    const sep    = line.includes('|') ? '|' : line.includes('\t') ? '\t' : ','
+    const parts  = line.split(sep).map(p => p.trim())
     const name           = parts[0] ?? ''
     const club           = parts[1] || null
     const rawSeed        = parts[2]
@@ -203,10 +205,10 @@ export async function bulkAddPlayersFromSheet(
       rowErrors[i] = `"${name}" already exists`; continue
     }
 
-    let seed: number | null = r.seed ?? null
+    let seed: number | null = r.seed != null ? Math.round(r.seed) : null
     if (seed !== null) {
       if (!Number.isInteger(seed) || seed < 1) {
-        rowErrors[i] = `Seed must be a positive integer (got ${seed})`; continue
+        rowErrors[i] = `Seed must be a positive integer (got ${r.seed})`; continue
       }
       if (existingSeeds.has(seed) || seenSeeds.has(seed)) {
         rowErrors[i] = `Seed ${seed} is already taken`; continue

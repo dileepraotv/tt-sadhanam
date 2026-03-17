@@ -198,7 +198,7 @@ export function NewEventForm({ cid, createAction }: Props) {
   const today = new Date().toISOString().split('T')[0]
 
   const [formatType,  setFormatTypeState] = useState<FormatType>('single_knockout')
-  const [name,        setName]            = useState(SINGLE_STAGE_OPTIONS[0].defaultName)
+  const [name,        setName]            = useState(`${SINGLE_STAGE_OPTIONS[0].defaultName} ${getDateSuffix()}`)
   const [nameEdited,  setNameEdited]      = useState(false)
   const [date,        setDate]            = useState(today)
   const [busy,        setBusy]            = useState(false)
@@ -209,7 +209,7 @@ export function NewEventForm({ cid, createAction }: Props) {
     setFormatTypeState(value)
     if (!nameEdited) {
       const opt = ALL_OPTIONS.find(o => o.value === value)
-      if (opt) setName(opt.defaultName)
+      if (opt) setName(`${opt.defaultName} ${getDateSuffix()}`)
     }
   }
 
