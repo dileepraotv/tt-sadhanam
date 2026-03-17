@@ -29,14 +29,16 @@ interface Props {
 export function Breadcrumb({ items, variant = 'public' }: Props) {
   if (items.length === 0) return null
 
+  // Solid dark bar — clearly distinguishable from the orange body gradient in light mode
   const bgClass = variant === 'admin'
-    ? 'bg-orange-700/90 border-orange-600/50'
-    : 'bg-orange-600/85 border-orange-500/50'
+    ? 'bg-orange-900/95 border-orange-800/80'
+    : 'bg-orange-800/90 border-orange-700/70'
 
   return (
     <nav
       aria-label="Breadcrumb"
       className={`border-b ${bgClass}`}
+      style={{ backdropFilter: 'brightness(0.7)' }}
     >
       <div className="mx-auto max-w-7xl px-4 sm:px-6 py-2">
         <ol className="flex items-center gap-1 flex-wrap">
@@ -45,7 +47,7 @@ export function Breadcrumb({ items, variant = 'public' }: Props) {
             <Link href="/" className="text-white/70 hover:text-white transition-colors">
               <Home className="h-3.5 w-3.5" />
             </Link>
-            <ChevronRight className="h-3.5 w-3.5 text-white/40 shrink-0" />
+            <ChevronRight className="h-3.5 w-3.5 text-orange-300/60 shrink-0" />
           </li>
 
           {items.map((item, i) => {
@@ -61,16 +63,16 @@ export function Breadcrumb({ items, variant = 'public' }: Props) {
                     {item.href ? (
                       <Link
                         href={item.href}
-                        className="text-sm text-white/80 hover:text-white transition-colors truncate max-w-[150px]"
+                        className="text-sm text-orange-100 hover:text-white transition-colors truncate max-w-[150px]"
                       >
                         {item.label}
                       </Link>
                     ) : (
-                      <span className="text-sm text-white/80 truncate max-w-[150px]">
+                      <span className="text-sm text-orange-100 truncate max-w-[150px]">
                         {item.label}
                       </span>
                     )}
-                    <ChevronRight className="h-3.5 w-3.5 text-white/40 shrink-0" />
+                    <ChevronRight className="h-3.5 w-3.5 text-orange-300/60 shrink-0" />
                   </>
                 )}
               </li>

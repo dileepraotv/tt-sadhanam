@@ -322,7 +322,7 @@ function FixtureRow({ match: m, matchBase, isAdmin }: {
           <div className="flex items-center gap-1.5 flex-1 min-w-0">
             <WinnerTrophyInline show={p1Won} />
             <span className={cn(
-              'truncate text-sm',
+              'truncate text-xs',
               p1Won ? 'font-bold text-foreground' : isComplete ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground',
             )}>
               {p1?.name ?? <span className="italic text-muted-foreground/50">TBD</span>}
@@ -332,7 +332,7 @@ function FixtureRow({ match: m, matchBase, isAdmin }: {
             <span className={cn(
               'font-bold tabular-nums text-sm shrink-0 w-5 text-right',
               p1Won ? 'font-bold text-foreground' : 'text-muted-foreground/50',
-            )}>
+            )} style={{fontSize:'12px'}}>
               {m.player1_games}
             </span>
           )}
@@ -362,7 +362,7 @@ function FixtureRow({ match: m, matchBase, isAdmin }: {
           <div className="flex items-center gap-1.5 flex-1 min-w-0">
             <WinnerTrophyInline show={p2Won} />
             <span className={cn(
-              'truncate text-sm',
+              'truncate text-xs',
               p2Won ? 'font-bold text-foreground' : isComplete ? 'font-normal text-muted-foreground' : 'font-semibold text-foreground',
             )}>
               {p2?.name ?? <span className="italic text-muted-foreground/50">TBD</span>}
@@ -372,7 +372,7 @@ function FixtureRow({ match: m, matchBase, isAdmin }: {
             <span className={cn(
               'font-bold tabular-nums text-sm shrink-0 w-5 text-right',
               p2Won ? 'font-bold text-foreground' : 'text-muted-foreground/50',
-            )}>
+            )} style={{fontSize:'12px'}}>
               {m.player2_games}
             </span>
           )}

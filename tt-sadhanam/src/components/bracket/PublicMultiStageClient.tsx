@@ -384,12 +384,12 @@ function PublicFixtureRow({ match: m }: { match: Match }) {
         )}>
           <WinnerTrophy show={p1Won} size="sm" />
           <span className={cn(
-            'flex-1 min-w-0 truncate',
+            'flex-1 min-w-0 truncate text-xs',
             p1Won ? 'font-bold text-foreground' : p2Won ? 'font-normal text-muted-foreground' : 'font-medium text-foreground',
           )}>{m.player1?.name ?? 'TBD'}</span>
           {(isComplete || isLive) && (
             <span className={cn(
-              'font-mono font-bold tabular-nums w-5 text-right shrink-0',
+              'font-mono font-bold tabular-nums w-5 text-right shrink-0 text-xs',
               p1Won ? 'text-foreground' : 'text-muted-foreground/50',
             )}>{m.player1_games}</span>
           )}
@@ -405,12 +405,12 @@ function PublicFixtureRow({ match: m }: { match: Match }) {
         )}>
           <WinnerTrophy show={p2Won} size="sm" />
           <span className={cn(
-            'flex-1 min-w-0 truncate',
+            'flex-1 min-w-0 truncate text-xs',
             p2Won ? 'font-bold text-foreground' : p1Won ? 'font-normal text-muted-foreground' : 'font-medium text-foreground',
           )}>{m.player2?.name ?? 'TBD'}</span>
           {(isComplete || isLive) && (
             <span className={cn(
-              'font-mono font-bold tabular-nums w-5 text-right shrink-0',
+              'font-mono font-bold tabular-nums w-5 text-right shrink-0 text-xs',
               p2Won ? 'text-foreground' : 'text-muted-foreground/50',
             )}>{m.player2_games}</span>
           )}

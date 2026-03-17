@@ -166,7 +166,7 @@ function PlayerRow({
         )}
         <span className={cn(
           'truncate',
-          compact ? 'text-sm' : 'text-base',
+          compact ? 'text-xs' : 'text-sm',
           !player?.name && 'text-muted-foreground/60 italic',
           isWinner ? WINNER_NAME_CLS : '',
           isLoser  ? LOSER_NAME_CLS  : '',
@@ -179,7 +179,7 @@ function PlayerRow({
       {showScore && (
         <span className={cn(
           'tabular-nums shrink-0',
-          compact ? 'text-sm w-4 text-center' : 'text-base w-5 text-center',
+          compact ? 'text-xs w-4 text-center' : 'text-sm w-5 text-center',
           isWinner ? WINNER_SCORE_CLS :
           isLoser  ? LOSER_SCORE_CLS  :
                      'font-semibold text-muted-foreground/60',

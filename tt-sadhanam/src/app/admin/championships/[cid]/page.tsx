@@ -33,7 +33,7 @@ async function getData(cid: string, userId: string) {
     .from('tournaments')
     .select('*')
     .eq('championship_id', cid)
-    .order('name')
+    .order('created_at', { ascending: false })
 
   const evIds = (events ?? []).map(e => e.id)
   // Fetch match status counts separately to avoid FK relationship dependency

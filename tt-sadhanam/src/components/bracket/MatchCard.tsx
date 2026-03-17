@@ -169,7 +169,7 @@ function PlayerRow({
         {player?.seed && <span className="seed-badge shrink-0">{player.seed}</span>}
         <span className={cn(
           'truncate leading-tight',
-          compact ? 'text-sm' : 'text-base',
+          compact ? 'text-xs' : 'text-sm',
           isEmpty   ? 'text-muted-foreground/50 italic text-sm' : '',
           isWinner  ? WINNER_NAME_CLS : '',
           isLoser   ? LOSER_NAME_CLS  : '',
@@ -182,7 +182,7 @@ function PlayerRow({
       {showScore && (
         <span className={cn(
           'tabular-nums shrink-0',
-          compact ? 'text-sm w-5 text-right' : 'text-base w-5 text-right',
+          compact ? 'text-xs w-5 text-right' : 'text-sm w-5 text-right',
           isWinner ? WINNER_SCORE_CLS :
           isLoser  ? LOSER_SCORE_CLS  :
                      'font-semibold text-muted-foreground/60',

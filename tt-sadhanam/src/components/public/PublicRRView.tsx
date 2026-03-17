@@ -378,12 +378,12 @@ function FixtureRow({ match, onMatchClick }: {
         <WinnerTrophy show={p1Won} size="sm" />
         {p1?.seed != null && <span className="seed-badge text-[9px] shrink-0">{p1.seed}</span>}
         <span className={cn(
-          'flex-1 min-w-0 truncate font-medium',
+          'flex-1 min-w-0 truncate text-xs font-medium',
           p1Won ? 'font-bold text-foreground' : p2Won ? 'font-normal text-muted-foreground' : 'text-foreground',
         )}>{p1?.name ?? 'TBD'}</span>
         {(isComplete || isLive) && (
           <span className={cn(
-            'font-mono font-bold tabular-nums w-5 text-right shrink-0',
+            'font-mono font-bold tabular-nums w-5 text-right shrink-0 text-xs',
             p1Won ? 'text-foreground' : 'text-muted-foreground/50',
           )}>{match.player1_games}</span>
         )}
@@ -401,12 +401,12 @@ function FixtureRow({ match, onMatchClick }: {
         <WinnerTrophy show={p2Won} size="sm" />
         {p2?.seed != null && <span className="seed-badge text-[9px] shrink-0">{p2.seed}</span>}
         <span className={cn(
-          'flex-1 min-w-0 truncate font-medium',
+          'flex-1 min-w-0 truncate text-xs font-medium',
           p2Won ? 'font-bold text-foreground' : p1Won ? 'font-normal text-muted-foreground' : 'text-foreground',
         )}>{p2?.name ?? 'TBD'}</span>
         {(isComplete || isLive) && (
           <span className={cn(
-            'font-mono font-bold tabular-nums w-5 text-right shrink-0',
+            'font-mono font-bold tabular-nums w-5 text-right shrink-0 text-xs',
             p2Won ? 'text-foreground' : 'text-muted-foreground/50',
           )}>{match.player2_games}</span>
         )}

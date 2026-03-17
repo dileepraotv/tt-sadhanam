@@ -35,7 +35,7 @@ async function getData(cid: string): Promise<{ championship: Championship; allEv
     .from('tournaments')
     .select('*')
     .eq('championship_id', cid)
-    .order('name')
+    .order('created_at', { ascending: false })
 
   const evIds = (events ?? []).map((e: { id: string }) => e.id)
   let matchRows: { tournament_id: string; status: string }[] = []

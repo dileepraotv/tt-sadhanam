@@ -48,6 +48,20 @@ const THEMES: Record<FormatType, ColorTheme> = {
   team_group_swaythling: { base: 'border-pink-200 bg-pink-50/60 dark:border-pink-800/60 dark:bg-pink-950/20',            active: 'border-pink-500 bg-pink-100 dark:border-pink-400 dark:bg-pink-950/50 shadow-md shadow-pink-100 dark:shadow-pink-900/20',         hover: 'hover:border-pink-400 hover:bg-pink-100/80 dark:hover:border-pink-600 dark:hover:bg-pink-950/30',     activeText: 'text-pink-700 dark:text-pink-300',    badgeBg: 'bg-pink-200 dark:bg-pink-900',     badgeText: 'text-pink-700 dark:text-pink-300',     iconColor: 'text-pink-500 dark:text-pink-400',    ring: 'focus-visible:ring-pink-400' },
 }
 
+
+// ─── Date suffix helper ───────────────────────────────────────────────────────
+// Generates DDMMYY-HH:MM suffix from current local time
+
+function getDateSuffix(): string {
+  const now = new Date()
+  const dd  = String(now.getDate()).padStart(2, '0')
+  const mm  = String(now.getMonth() + 1).padStart(2, '0')
+  const yy  = String(now.getFullYear()).slice(-2)
+  const hh  = String(now.getHours()).padStart(2, '0')
+  const min = String(now.getMinutes()).padStart(2, '0')
+  return `${dd}${mm}${yy}-${hh}:${min}`
+}
+
 interface FormatOption {
   value:       FormatType
   icon:        React.ReactNode
@@ -184,7 +198,7 @@ export function NewEventForm({ cid, createAction }: Props) {
   const today = new Date().toISOString().split('T')[0]
 
   const [formatType,  setFormatTypeState] = useState<FormatType>('single_knockout')
-  const [name,        setName]            = useState(SINGLE_STAGE_OPTIONS[0].defaultName)
+  const [name,        setName]            = useState(`${SINGLE_STAGE_OPTIONS[0].defaultName} ${getDateSuffix()}`)
   const [nameEdited,  setNameEdited]      = useState(false)
   const [date,        setDate]            = useState(today)
   const [busy,        setBusy]            = useState(false)
@@ -195,7 +209,7 @@ export function NewEventForm({ cid, createAction }: Props) {
     setFormatTypeState(value)
     if (!nameEdited) {
       const opt = ALL_OPTIONS.find(o => o.value === value)
-      if (opt) setName(opt.defaultName)
+      if (opt) setName(`${opt.defaultName} ${getDateSuffix()}`)
     }
   }
 
@@ -274,7 +288,7 @@ export function NewEventForm({ cid, createAction }: Props) {
           </span>
           <div className="h-px flex-1 bg-border" />
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {SINGLE_STAGE_OPTIONS.map(opt => (
             <FormatCard key={opt.value} opt={opt}
               isActive={formatType === opt.value}

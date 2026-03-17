@@ -39,7 +39,7 @@ export default async function NewEventPage({ params }: PageProps) {
         ]}
       />
 
-      <main className="flex-1 mx-auto w-full max-w-4xl px-4 sm:px-6 py-10">
+      <main className="flex-1 mx-auto w-full max-w-6xl px-4 sm:px-6 py-8">
         <div className="surface-card p-6 sm:p-8">
 
           <div className="mb-6 flex items-center gap-3">
