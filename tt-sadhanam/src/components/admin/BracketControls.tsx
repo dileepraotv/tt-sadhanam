@@ -6,6 +6,7 @@
  */
 
 import { useState, useTransition } from 'react'
+import { useLoading } from '@/components/shared/GlobalLoader'
 import { Shuffle, AlertTriangle, Calendar, MapPin, Trophy } from 'lucide-react'
 import type { Tournament, Player } from '@/lib/types'
 import { Button } from '@/components/ui/button'
@@ -22,18 +23,22 @@ interface Props {
 export function GenerateDrawButton({ tournament, players }: Props) {
   const [showConfirm, setShowConfirm] = useState(false)
   const [isPending, startTransition]  = useTransition()
+  const { setLoading }               = useLoading()
 
   const canGenerate = players.length >= 2
   const isGenerated = tournament.bracket_generated
 
   const doGenerate = () => {
     setShowConfirm(false)
+    setLoading(true)
     startTransition(async () => {
       try {
         await generateBracketAction(tournament.id)
         toast({ title: '🎯 Draw generated!', description: `${players.length} players drawn. Public view enabled.` })
       } catch (e: unknown) {
         toast({ title: 'Generation failed', description: (e as Error).message, variant: 'destructive' })
+      } finally {
+        setLoading(false)
       }
     })
   }

@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/index'
 import { bulkAddPlayersFromSheet } from '@/lib/actions/players'
+import { useLoading } from '@/components/shared/GlobalLoader'
 import { toast } from '@/components/ui/toaster'
 import type { Player } from '@/lib/types'
 
@@ -205,6 +206,7 @@ export function ExcelUpload({ tournamentId, existingPlayers, onComplete }: Props
   const [isPending,    startTransition] = useTransition()
   const [dragging,     setDragging]     = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const { setLoading }               = useLoading()
 
   const existingNames = new Set(existingPlayers.map(p => p.name.toLowerCase()))
 
@@ -244,11 +246,13 @@ export function ExcelUpload({ tournamentId, existingPlayers, onComplete }: Props
 
   const handleImport = () => {
     if (!validRows.length) return
+    setLoading(true)
     startTransition(async () => {
       const result = await bulkAddPlayersFromSheet(
         tournamentId,
         validRows.map(r => ({ name: r.name, club: r.club, seed: r.seed, preferredGroup: r.preferredGroup })),
       )
+      setLoading(false)
       if (result.error) {
         toast({ title: 'Import failed', description: result.error, variant: 'destructive' })
       } else {

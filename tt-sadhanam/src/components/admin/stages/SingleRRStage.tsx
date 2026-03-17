@@ -13,6 +13,7 @@
  */
 
 import { useTransition, useState } from 'react'
+import { useLoading } from '@/components/shared/GlobalLoader'
 import { useRouter } from 'next/navigation'
 import {
   Users, Shuffle, RefreshCw, Lock, AlertTriangle,
@@ -70,6 +71,7 @@ export function SingleRRStage({
   tournament, players, stage, standings, rrMatches, hasScores, allComplete, matchBase, initialGroup = 0,
 }: Props) {
   const [isPending, startTransition]  = useTransition()
+  const { setLoading }               = useLoading()
   const [showReset,          setShowReset]          = useState(false)
   const [showForceFinalize,  setShowForceFinalize]  = useState(false)
   const router = useRouter()
@@ -80,12 +82,10 @@ export function SingleRRStage({
   // ── Handlers ──────────────────────────────────────────────────────────────
 
   const handleCreate = (values: RRConfigValues) => {
+    setLoading(true)
     startTransition(async () => {
-      const result = await createRRStage({
-        tournamentId:   tournament.id,
-        stageNumber:    1,
-        ...values,
-      })
+      const result = await createRRStage({ tournamentId: tournament.id, stageNumber: 1, ...values })
+      setLoading(false)
       if (result.error) {
         toast({ title: 'Could not create stage', description: result.error, variant: 'destructive' })
       } else {
@@ -97,6 +97,7 @@ export function SingleRRStage({
 
   const handleReconfigure = () => {
     if (!stage) return
+    setLoading(true)
     startTransition(async () => {
       const result = await deleteStageOnly(stage.id, tournament.id)
       if (result.error) {
@@ -105,11 +106,13 @@ export function SingleRRStage({
         toast({ title: 'Back to configuration' })
         router.refresh()
       }
+      setLoading(false)
     })
   }
 
   const handleAssign = () => {
     if (!stage) return
+    setLoading(true)
     startTransition(async () => {
       const result = await generateGroups(stage.id, tournament.id)
       if (result.error) {
@@ -118,11 +121,13 @@ export function SingleRRStage({
         toast({ title: 'Players assigned to groups' })
         router.refresh()
       }
+      setLoading(false)
     })
   }
 
   const handleGenerateFixtures = () => {
     if (!stage) return
+    setLoading(true)
     startTransition(async () => {
       const result = await generateFixtures(stage.id, tournament.id)
       if (result.error) {
@@ -131,11 +136,13 @@ export function SingleRRStage({
         toast({ title: '🗓 Schedule generated', description: `${result.matchCount} matches created` })
         router.refresh()
       }
+      setLoading(false)
     })
   }
 
   const handleReset = () => {
     if (!stage) return
+    setLoading(true)
     startTransition(async () => {
       const result = await resetStage(stage.id, tournament.id)
       setShowReset(false)
@@ -152,11 +159,13 @@ export function SingleRRStage({
           description: parts.length ? `Deleted: ${parts.join(', ')}.` : 'All data cleared. Ready to regenerate.',
         })
       }
+      setLoading(false)
     })
   }
 
   const handleForceClose = () => {
     if (!stage) return
+    setLoading(true)
     startTransition(async () => {
       const result = await forceCloseStage1(stage.id, tournament.id)
       setShowForceFinalize(false)
@@ -169,6 +178,7 @@ export function SingleRRStage({
           description: skipped > 0 ? `${skipped} incomplete match${skipped > 1 ? 'es' : ''} skipped.` : 'All matches complete.',
         })
       }
+      setLoading(false)
     })
   }
 

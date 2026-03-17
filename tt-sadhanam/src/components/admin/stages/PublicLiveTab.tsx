@@ -36,6 +36,7 @@ export function PublicLiveTab({ tournament, matches, matchBase }: Props) {
   const [showDelete, setShowDelete]   = useState(false)
   const [copied, setCopied]           = useState(false)
   const [isPending, startTransition]  = useTransition()
+  const { setLoading }               = useLoading()
 
   const isPublished  = tournament.published
   const hasActivity  = tournament.bracket_generated ||
@@ -50,6 +51,7 @@ export function PublicLiveTab({ tournament, matches, matchBase }: Props) {
   const pendingMatches = matches.filter(m => m.status === 'pending' && m.player1_id && m.player2_id)
 
   const handlePublishToggle = (checked: boolean) => {
+    setLoading(true)
     startTransition(async () => {
       try {
         await togglePublish(tournament.id, checked)
@@ -75,6 +77,7 @@ export function PublicLiveTab({ tournament, matches, matchBase }: Props) {
   }
 
   const handleDelete = () => {
+    setLoading(true)
     startTransition(async () => {
       try {
         await deleteTournament(tournament.id)

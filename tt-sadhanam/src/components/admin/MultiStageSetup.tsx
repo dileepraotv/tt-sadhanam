@@ -89,6 +89,7 @@ export function MultiStageSetup({
   initialGroup = 0,
 }: Props) {
   const [isPending, startTransition] = useTransition()
+  const { setLoading }               = useLoading()
   const [showReset, setShowReset]    = useState(false)
   const [showAdvance, setShowAdvance] = useState(false)
 
@@ -119,6 +120,7 @@ export function MultiStageSetup({
       return
     }
 
+    setLoading(true)
     startTransition(async () => {
       const result = await createRRStage({
         tournamentId:   tournament.id,
@@ -139,6 +141,7 @@ export function MultiStageSetup({
 
   const handleReconfigure = () => {
     if (!stage) return
+    setLoading(true)
     startTransition(async () => {
       const result = await deleteStageOnly(stage.id, tournament.id)
       if (result.error) {
@@ -151,6 +154,7 @@ export function MultiStageSetup({
 
   const handleAssignPlayers = () => {
     if (!stage) return
+    setLoading(true)
     startTransition(async () => {
       const result = await generateGroups(stage.id, tournament.id)
       if (result.error) {
@@ -163,6 +167,7 @@ export function MultiStageSetup({
 
   const handleGenerateFixtures = () => {
     if (!stage) return
+    setLoading(true)
     startTransition(async () => {
       const result = await generateFixtures(stage.id, tournament.id)
       if (result.error) {
@@ -175,6 +180,7 @@ export function MultiStageSetup({
 
   const handleReset = () => {
     if (!stage) return
+    setLoading(true)
     startTransition(async () => {
       const result = await resetStage(stage.id, tournament.id)
       setShowReset(false)
