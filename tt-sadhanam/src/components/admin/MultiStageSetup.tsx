@@ -30,6 +30,7 @@
  */
 
 import { useState, useTransition } from 'react'
+import { useLoading } from '@/components/shared/GlobalLoader'
 import {
   Settings2, Users, Shuffle, Lock, Unlock, ChevronRight,
   AlertTriangle, Trophy, CheckCircle2, RefreshCw,

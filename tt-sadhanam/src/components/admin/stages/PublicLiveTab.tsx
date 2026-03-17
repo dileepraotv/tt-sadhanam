@@ -10,6 +10,7 @@
  */
 
 import { useState, useTransition } from 'react'
+import { useLoading } from '@/components/shared/GlobalLoader'
 import {
   Globe, GlobeLock, ExternalLink, Copy, CheckCircle2,
   AlertTriangle, Trash2, Radio, Wifi,
