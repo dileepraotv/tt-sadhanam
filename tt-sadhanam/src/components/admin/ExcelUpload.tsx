@@ -32,7 +32,10 @@ const SEED_COLS  = ['seed', 'seeding', 'rank', 'ranking', 'seeded']
 const GROUP_COLS = ['group', 'group name', 'groupname', 'preferred group', 'group no', 'group number']
 
 function detectColumns(headers: string[]) {
-  const norm = headers.map(h => String(h ?? '').trim().toLowerCase())
+  // Normalise: lowercase, trim, and strip any trailing parenthetical like "(optional)" or "(required)"
+  const norm = headers.map(h =>
+    String(h ?? '').trim().toLowerCase().replace(/\s*\(.*?\)\s*$/, '').trim()
+  )
   return {
     nameIdx:  norm.findIndex(h => NAME_COLS.includes(h)),
     clubIdx:  norm.findIndex(h => CLUB_COLS.includes(h)),
