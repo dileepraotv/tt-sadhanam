@@ -429,8 +429,8 @@ export async function declareMatchWinner(
     .eq('id', matchId)
     .single()
 
-  if (!match) return
-  if (match.status === 'complete') return  // guard: cannot re-live a completed match
+  if (!match) return { success: false, error: 'Match not found' }
+  if (match.status === 'complete') return { success: false, error: 'Match is already complete.' }
   // Allow declaring winner for team submatches (player1_id/player2_id are null in DB)
   const isTeamSub = match.match_kind === 'team_submatch'
   if (!isTeamSub && winnerId !== match.player1_id && winnerId !== match.player2_id)
