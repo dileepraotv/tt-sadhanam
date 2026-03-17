@@ -203,13 +203,12 @@ export function computeAllGroupStandings(
  * Sort a flat list of PlayerStanding by the ITTF-style tiebreaker chain.
  * Returns a new array (does not mutate input).
  *
- * Algorithm:
- *   1. Sort all players by wins DESC
- *   2. Within each tied group:
- *      a. If exactly 2 tied → apply head-to-head
- *      b. All tied groups → apply game difference
- *      c. Still tied → apply points difference
- *      d. Still tied → stable sort by player ID (deterministic)
+ * Algorithm (ITTF-aligned):
+ *   1. Match points (wins) DESC
+ *   2. Match difference (wins − losses) DESC
+ *   3. Game difference (games won − games lost) DESC
+ *   4. Points difference (points scored − conceded) DESC
+ *   5. Seed ASC (lower seed = better), then stable player ID fallback
  */
 function sortStandings(
   standings:         PlayerStanding[],
@@ -249,38 +248,38 @@ function sortStandings(
  * Apply tiebreakers to a group of players with equal win counts.
  * Returns a fully ordered sub-array.
  *
- * Standard table tennis tiebreaker order (per ITTF individual rules):
- *   1. Head-to-head result (2-player ties only)
- *   2. Games won (most wins first), then games lost (fewest losses first)
- *   3. Points scored (most first), then points conceded (fewest first)
- *   4. Stable fallback by player UUID (deterministic)
+ * Tiebreaker chain (ITTF individual rules):
+ *   1. Match difference (wins − losses) DESC
+ *   2. Game difference (gamesWon − gamesLost) DESC
+ *   3. Points difference (scored − conceded) DESC
+ *   4. Seed ASC (better seed wins), then stable player UUID fallback
  */
 function resolveTiedGroup(
   group:            PlayerStanding[],
   completedMatches: Match[],
 ): PlayerStanding[] {
-  if (group.length === 2) {
-    // Apply head-to-head only for exactly 2 tied players
-    const h2h = headToHeadWinner(group[0].playerId, group[1].playerId, completedMatches)
-    if (h2h === group[0].playerId) return [group[0], group[1]]
-    if (h2h === group[1].playerId) return [group[1], group[0]]
-    // H2H inconclusive → fall through
-  }
-
   return [...group].sort((a, b) => {
-    // TT rule 1: games won descending
-    if (b.gamesWon !== a.gamesWon) return b.gamesWon - a.gamesWon
+    // 1. Match difference (wins − losses) DESC
+    const matchDiffA = a.wins - a.losses
+    const matchDiffB = b.wins - b.losses
+    if (matchDiffB !== matchDiffA) return matchDiffB - matchDiffA
 
-    // TT rule 2: games lost ascending (fewer lost = better)
-    if (a.gamesLost !== b.gamesLost) return a.gamesLost - b.gamesLost
+    // 2. Game difference (gamesWon − gamesLost) DESC
+    const gameDiffA = a.gamesWon - a.gamesLost
+    const gameDiffB = b.gamesWon - b.gamesLost
+    if (gameDiffB !== gameDiffA) return gameDiffB - gameDiffA
 
-    // TT rule 3: points scored descending
-    if (b.pointsScored !== a.pointsScored) return b.pointsScored - a.pointsScored
+    // 3. Points difference (scored − conceded) DESC
+    const ptDiffA = a.pointsScored - a.pointsConceded
+    const ptDiffB = b.pointsScored - b.pointsConceded
+    if (ptDiffB !== ptDiffA) return ptDiffB - ptDiffA
 
-    // TT rule 4: points conceded ascending (fewer conceded = better)
-    if (a.pointsConceded !== b.pointsConceded) return a.pointsConceded - b.pointsConceded
+    // 4. Seed ASC (lower seed number = better seeded player)
+    const seedA = a.playerSeed ?? 9999
+    const seedB = b.playerSeed ?? 9999
+    if (seedA !== seedB) return seedA - seedB
 
-    // Stable fallback: lexicographic by player UUID (deterministic)
+    // 5. Stable fallback by player UUID (deterministic draw lot simulation)
     return a.playerId < b.playerId ? -1 : a.playerId > b.playerId ? 1 : 0
   })
 }

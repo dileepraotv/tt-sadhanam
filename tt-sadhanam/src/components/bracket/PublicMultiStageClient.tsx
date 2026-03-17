@@ -87,8 +87,9 @@ export function PublicMultiStageClient({
         </div>
       )}
 
-      {/* Tab switcher */}
-      <div className="flex gap-2 mb-6">
+      {/* Tab switcher — white surface so tabs are visible on the orange page background */}
+      <div className="bg-card border-b border-border -mx-4 sm:mx-0 px-4 py-3">
+        <div className="flex gap-2">
         <button
           onClick={() => setActiveTab('groups')}
           className={cn(
@@ -120,6 +121,7 @@ export function PublicMultiStageClient({
           Knockout
           {koLive && <span className="h-1.5 w-1.5 rounded-full bg-red-400 animate-pulse" />}
         </button>
+        </div>
       </div>
 
       {activeTab === 'groups' && (
@@ -372,7 +374,7 @@ function PublicFixtureRow({ match: m }: { match: Match }) {
   return (
     <div className={cn(
       'rounded-lg border text-sm',
-      isComplete && 'bg-slate-100/80 dark:bg-slate-800/40 border-border/40',
+      isComplete && 'bg-zinc-200/70 dark:bg-zinc-700/45 border-border/40',
       isLive     && 'border-orange-400/70 bg-orange-50/50 dark:bg-orange-950/15 shadow-sm',
       !isComplete && !isLive && 'bg-card border-border',
     )}>

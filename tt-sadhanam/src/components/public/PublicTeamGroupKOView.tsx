@@ -182,8 +182,8 @@ export function PublicTeamGroupKOView({ tournament }: { tournament: Tournament }
 
   return (
     <div className="flex flex-col">
-      {/* Tab bar */}
-      <div className="flex gap-1 border-b border-border px-4 sm:px-6">
+      {/* Tab bar — white surface so tabs are visible on orange page background */}
+      <div className="bg-card border-b border-border flex gap-1 px-4 sm:px-6">
         {([
           { key: 'groups',   label: 'Groups',   icon: <Layers className="h-3.5 w-3.5" /> },
           { key: 'knockout', label: 'Knockout',  icon: <Trophy className="h-3.5 w-3.5" />, disabled: !hasKO },
@@ -195,8 +195,8 @@ export function PublicTeamGroupKOView({ tournament }: { tournament: Tournament }
             className={cn(
               'flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px',
               tab === t.key
-                ? 'border-orange-500 text-orange-600 dark:text-orange-400'
-                : 'border-transparent text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed',
+                ? 'border-orange-500 text-orange-600 dark:text-orange-400 font-semibold'
+                : 'border-transparent text-foreground/70 hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed',
             )}
           >
             {t.icon}
@@ -223,7 +223,7 @@ export function PublicTeamGroupKOView({ tournament }: { tournament: Tournament }
               return (
                 <div key={group.id} className={cn(
                   'rounded-xl border overflow-hidden',
-                  allDone ? 'border-border/40 bg-slate-100/80 dark:bg-slate-800/40' : 'border-border bg-card',
+                  allDone ? 'border-border/40 bg-zinc-200/70 dark:bg-zinc-700/45' : 'border-border bg-card',
                 )}>
                   {/* Group header — always visible */}
                   <div className="px-4 pt-3 pb-0">
@@ -418,7 +418,7 @@ function PublicFixtureRow({ match }: { match: TeamMatchRow }) {
   return (
     <div className={cn('rounded-lg border overflow-hidden',
       isLive     ? 'border-orange-400/70 bg-orange-50/50 dark:bg-orange-950/15' :
-      isComplete ? 'border-border/40 bg-slate-100/80 dark:bg-slate-800/40' :
+      isComplete ? 'border-border/40 bg-zinc-200/70 dark:bg-zinc-700/45' :
                    'border-border bg-card',
     )}>
       <button
@@ -530,7 +530,7 @@ function PublicKOCard({ match }: { match: TeamMatchRow }) {
   return (
     <div className={cn('rounded-xl border overflow-hidden',
       isLive     ? 'border-orange-400/70 bg-orange-50/50 dark:bg-orange-950/15 shadow-sm' :
-      isComplete ? 'border-border/40 bg-slate-100/80 dark:bg-slate-800/40' :
+      isComplete ? 'border-border/40 bg-zinc-200/70 dark:bg-zinc-700/45' :
                    'border-border bg-card',
     )}>
       <button

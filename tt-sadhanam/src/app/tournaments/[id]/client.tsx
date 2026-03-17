@@ -127,7 +127,8 @@ export function PublicTournamentClient({
   )
 
   const mainContent = (
-    <main className={embedded ? "flex flex-col gap-5" : "page-shell flex flex-col gap-5"}>
+    <main className={embedded ? "flex flex-col gap-5" : "page-shell"}>
+      <div className={embedded ? "flex flex-col gap-5" : "mx-auto w-full max-w-6xl px-4 sm:px-6 py-6 flex flex-col gap-5"}>
 
       {/* ── Live Now — pinned, shows matches from any stage ── */}
       {liveMatches.length > 0 && (
@@ -339,7 +340,7 @@ function TournamentHero({ tournament, liveCount, champion, connectionStatus, isA
 
         {/* Champion banner */}
         {champion && (
-          <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-amber-400/10 border border-amber-400/30 px-4 py-2 animate-fade-in">
+          <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-white/85 border border-amber-500/60 shadow-sm px-4 py-1.5 animate-fade-in">
             <span className="text-base">🏆</span>
             <span className="text-sm font-semibold text-amber-600 dark:text-amber-400">
               {champion.name} — Champion!

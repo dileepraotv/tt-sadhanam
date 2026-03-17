@@ -152,9 +152,9 @@ export default async function PublicEventPage({ params }: PageProps) {
 
           {/* Champion banner */}
           {champion && (
-            <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-amber-400/10 border border-amber-400/30 px-4 py-1.5 animate-fade-in">
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-white/85 border border-amber-500/60 shadow-sm px-4 py-1.5 animate-fade-in">
               <span className="text-base">🏆</span>
-              <span className="text-sm font-semibold text-amber-600 dark:text-amber-400">
+              <span className="text-sm font-semibold text-amber-700 dark:text-amber-300">
                 {champion.name} — Champion!
               </span>
             </div>
