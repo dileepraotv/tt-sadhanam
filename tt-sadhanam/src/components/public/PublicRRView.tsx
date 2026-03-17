@@ -365,7 +365,7 @@ function FixtureRow({ match, onMatchClick }: {
       className={cn(
         'flex flex-col px-3 py-2 border text-sm transition-colors',
         isLive && 'bg-orange-50/80 dark:bg-orange-950/20 border-l-2 border-l-orange-400 border-border/40',
-        isComplete && 'bg-zinc-200/70 dark:bg-zinc-700/45 border-border/30',
+        isComplete && 'bg-[#BEBEBE]/60 dark:bg-[#5a5a5a]/40 border-border/30',
         !isComplete && !isLive && 'bg-card border-border/0',
         isClickable && 'cursor-pointer hover:bg-muted/10',
       )}

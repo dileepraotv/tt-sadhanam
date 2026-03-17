@@ -127,62 +127,69 @@ export function PublicTournamentClient({
   )
 
   const mainContent = (
-    <main className={embedded ? "flex flex-col gap-5" : "page-shell"}>
-      <div className={embedded ? "flex flex-col gap-5" : "mx-auto w-full max-w-6xl px-4 sm:px-6 py-6 flex flex-col gap-5"}>
+    <div className={embedded
+      ? "flex flex-col gap-5"
+      : "page-shell"
+    }>
+      <div className={embedded
+        ? "flex flex-col gap-5"
+        : "mx-auto w-full max-w-6xl px-4 sm:px-6 py-6 flex flex-col gap-5"
+      }>
 
-      {/* ── Live Now — pinned, shows matches from any stage ── */}
-      {liveMatches.length > 0 && (
-        <LiveNowStrip
-          matches={liveMatches}
-          rrGroups={rrGroups}
-          onMatchClick={handleMatchClick}
-        />
-      )}
+        {/* ── Live Now — pinned, shows matches from any stage ── */}
+        {liveMatches.length > 0 && (
+          <LiveNowStrip
+            matches={liveMatches}
+            rrGroups={rrGroups}
+            onMatchClick={handleMatchClick}
+          />
+        )}
 
-      {/* ── Main content — routed by format_type ── */}
-      <div className="surface-card overflow-hidden">
+        {/* ── Main content — routed by format_type ── */}
+        <div className="surface-card overflow-hidden">
 
-        {/* Single Knockout */}
-        {ft === 'single_knockout' && (
-          <div className="p-4 sm:p-6">
-            <BracketView
+          {/* Single Knockout */}
+          {ft === 'single_knockout' && (
+            <div className="p-4 sm:p-6">
+              <BracketView
+                tournament={tournament}
+                matches={koMatches.length > 0 ? koMatches : matches}
+                isAdmin={false}
+                onMatchClick={handleMatchClick}
+              />
+            </div>
+          )}
+
+          {/* Single Round Robin */}
+          {ft === 'single_round_robin' && (
+            <PublicRRView
               tournament={tournament}
-              matches={koMatches.length > 0 ? koMatches : matches}
-              isAdmin={false}
+              groups={rrGroups}
+              standings={rrStandings}
+              rrMatches={rrMatches.length > 0 ? rrMatches : matches}
+              rrStage={rrStage}
               onMatchClick={handleMatchClick}
             />
-          </div>
-        )}
+          )}
 
-        {/* Single Round Robin */}
-        {ft === 'single_round_robin' && (
-          <PublicRRView
-            tournament={tournament}
-            groups={rrGroups}
-            standings={rrStandings}
-            rrMatches={rrMatches.length > 0 ? rrMatches : matches}
-            rrStage={rrStage}
-            onMatchClick={handleMatchClick}
-          />
-        )}
+          {/* Multi-stage: Groups → Knockout */}
+          {ft === 'multi_rr_to_knockout' && (
+            <MultiStageView
+              tournament={tournament}
+              groups={rrGroups}
+              standings={rrStandings}
+              rrMatches={rrMatches}
+              koMatches={koMatches}
+              rrStage={rrStage}
+              onMatchClick={handleMatchClick}
+            />
+          )}
+        </div>
 
-        {/* Multi-stage: Groups → Knockout */}
-        {ft === 'multi_rr_to_knockout' && (
-          <MultiStageView
-            tournament={tournament}
-            groups={rrGroups}
-            standings={rrStandings}
-            rrMatches={rrMatches}
-            koMatches={koMatches}
-            rrStage={rrStage}
-            onMatchClick={handleMatchClick}
-          />
-        )}
+        {/* ── Connection footer ── */}
+        <RealtimeFooter status={connectionStatus} />
       </div>
-
-      {/* ── Connection footer ── */}
-      <RealtimeFooter status={connectionStatus} />
-    </main>
+    </div>
   )
 
   if (embedded) {

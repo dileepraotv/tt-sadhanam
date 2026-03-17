@@ -223,7 +223,7 @@ export function PublicTeamGroupKOView({ tournament }: { tournament: Tournament }
               return (
                 <div key={group.id} className={cn(
                   'rounded-xl border overflow-hidden',
-                  allDone ? 'border-border/40 bg-zinc-200/70 dark:bg-zinc-700/45' : 'border-border bg-card',
+                  allDone ? 'border-border/40 bg-[#BEBEBE]/60 dark:bg-[#5a5a5a]/40' : 'border-border bg-card',
                 )}>
                   {/* Group header — always visible */}
                   <div className="px-4 pt-3 pb-0">
@@ -418,7 +418,7 @@ function PublicFixtureRow({ match }: { match: TeamMatchRow }) {
   return (
     <div className={cn('rounded-lg border overflow-hidden',
       isLive     ? 'border-orange-400/70 bg-orange-50/50 dark:bg-orange-950/15' :
-      isComplete ? 'border-border/40 bg-zinc-200/70 dark:bg-zinc-700/45' :
+      isComplete ? 'border-border/40 bg-[#BEBEBE]/60 dark:bg-[#5a5a5a]/40' :
                    'border-border bg-card',
     )}>
       <button
@@ -530,7 +530,7 @@ function PublicKOCard({ match }: { match: TeamMatchRow }) {
   return (
     <div className={cn('rounded-xl border overflow-hidden',
       isLive     ? 'border-orange-400/70 bg-orange-50/50 dark:bg-orange-950/15 shadow-sm' :
-      isComplete ? 'border-border/40 bg-zinc-200/70 dark:bg-zinc-700/45' :
+      isComplete ? 'border-border/40 bg-[#BEBEBE]/60 dark:bg-[#5a5a5a]/40' :
                    'border-border bg-card',
     )}>
       <button

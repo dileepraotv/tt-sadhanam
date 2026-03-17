@@ -374,7 +374,7 @@ function PublicFixtureRow({ match: m }: { match: Match }) {
   return (
     <div className={cn(
       'rounded-lg border text-sm',
-      isComplete && 'bg-zinc-200/70 dark:bg-zinc-700/45 border-border/40',
+      isComplete && 'bg-[#BEBEBE]/60 dark:bg-[#5a5a5a]/40 border-border/40',
       isLive     && 'border-orange-400/70 bg-orange-50/50 dark:bg-orange-950/15 shadow-sm',
       !isComplete && !isLive && 'bg-card border-border',
     )}>

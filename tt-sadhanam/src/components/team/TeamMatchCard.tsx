@@ -40,7 +40,7 @@ export function TeamMatchCard({ teamMatch, subMatchScores }: Props) {
       className={cn(
         'rounded-xl border overflow-hidden transition-colors',
         isLive  ? 'border-orange-400 dark:border-orange-500 bg-orange-50/30 dark:bg-orange-950/10' :
-        isDone  ? 'border-border/40 bg-zinc-200/70 dark:bg-zinc-700/45' :
+        isDone  ? 'border-border/40 bg-[#BEBEBE]/60 dark:bg-[#5a5a5a]/40' :
                   'border-border bg-card',
       )}
     >

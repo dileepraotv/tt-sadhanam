@@ -59,7 +59,7 @@ export function PublicMatchCard({ match, onMatchClick, compact = false, groupNam
       className={cn(
         'relative rounded-xl border transition-all duration-150 overflow-hidden select-none',
         isLive     && 'border-orange-400/70 bg-orange-50/30 dark:bg-orange-950/10 shadow-sm shadow-orange-200/40',
-        isComplete && 'border-border/40 bg-zinc-200/70 dark:bg-zinc-700/45',
+        isComplete && 'border-border/40 bg-[#BEBEBE]/60 dark:bg-[#5a5a5a]/40',
         match.status === 'pending' && 'border-border bg-card',
         isBye      && 'border-border/20 bg-muted/10',
         isClickable && 'cursor-pointer hover:border-orange-400 hover:shadow-md active:scale-[0.99]',

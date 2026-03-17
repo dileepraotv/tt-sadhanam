@@ -308,7 +308,7 @@ function FixtureRow({ match: m, matchBase, isAdmin }: {
     <div className={cn(
       'rounded-xl border overflow-hidden transition-all',
       isLive     ? 'border-orange-400/70 bg-orange-50/30 dark:bg-orange-950/10 shadow-sm' :
-      isComplete ? 'border-border/40 bg-zinc-200/70 dark:bg-zinc-700/45' :
+      isComplete ? 'border-border/40 bg-[#BEBEBE]/60 dark:bg-[#5a5a5a]/40' :
       isBye      ? 'border-border/20 bg-muted/5' :
                    'border-border bg-card',
     )}>
