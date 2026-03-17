@@ -17,6 +17,10 @@ interface Props { tournament: Tournament }
 
 export function PublicTeamLeagueView({ tournament }: Props) {
   const supabase = createClient()
+  // team_league_ko and team_league_swaythling are pure KO bracket formats:
+  // they have no round-robin standings — only a bracket exists.
+  const isKOFormat = tournament.format_type === 'team_league_ko'
+                  || tournament.format_type === 'team_league_swaythling'
 
   const [teams,         setTeams]         = useState<Team[]>([])
   const [teamMatches,   setTeamMatches]   = useState<TeamMatch[]>([])
@@ -146,8 +150,8 @@ export function PublicTeamLeagueView({ tournament }: Props) {
         </div>
       </div>
 
-      {/* Team Standings */}
-      <div className="bg-card rounded-xl border border-border overflow-hidden">
+      {/* Team Standings — only for league format, not KO bracket formats */}
+      {!isKOFormat && <div className="bg-card rounded-xl border border-border overflow-hidden">
         <div className="px-4 py-3 border-b border-border flex items-center gap-2">
           <Trophy className="h-4 w-4 text-amber-500" />
           <h2 className="font-semibold text-base">Team Standings</h2>
@@ -189,7 +193,7 @@ export function PublicTeamLeagueView({ tournament }: Props) {
             </tbody>
           </table>
         </div>
-      </div>
+      </div>}
 
       {/* Fixtures — orange tab bar matching admin BracketView style */}
       {roundMap.length > 0 && (

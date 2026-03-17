@@ -249,6 +249,7 @@ function sortStandings(
  * Returns a fully ordered sub-array.
  *
  * Tiebreaker chain (ITTF individual rules):
+ *   0. H2H result (2-player ties only — ITTF standard)
  *   1. Match difference (wins − losses) DESC
  *   2. Game difference (gamesWon − gamesLost) DESC
  *   3. Points difference (scored − conceded) DESC
@@ -258,6 +259,14 @@ function resolveTiedGroup(
   group:            PlayerStanding[],
   completedMatches: Match[],
 ): PlayerStanding[] {
+  // H2H: only applied when exactly 2 players are tied (ITTF standard)
+  if (group.length === 2) {
+    const h2h = headToHeadWinner(group[0].playerId, group[1].playerId, completedMatches)
+    if (h2h === group[0].playerId) return [group[0], group[1]]
+    if (h2h === group[1].playerId) return [group[1], group[0]]
+    // H2H inconclusive (no completed match between them) → fall through
+  }
+
   return [...group].sort((a, b) => {
     // 1. Match difference (wins − losses) DESC
     const matchDiffA = a.wins - a.losses
@@ -274,12 +283,12 @@ function resolveTiedGroup(
     const ptDiffB = b.pointsScored - b.pointsConceded
     if (ptDiffB !== ptDiffA) return ptDiffB - ptDiffA
 
-    // 4. Seed ASC (lower seed number = better seeded player)
+    // 4. Seed ASC (lower seed number = better)
     const seedA = a.playerSeed ?? 9999
     const seedB = b.playerSeed ?? 9999
     if (seedA !== seedB) return seedA - seedB
 
-    // 5. Stable fallback by player UUID (deterministic draw lot simulation)
+    // 5. Stable fallback by player UUID (draw lot)
     return a.playerId < b.playerId ? -1 : a.playerId > b.playerId ? 1 : 0
   })
 }

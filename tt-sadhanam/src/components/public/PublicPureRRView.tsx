@@ -5,7 +5,7 @@
  * Shows: progress bar + standings + round tabs (orange, matching admin BracketView style).
  */
 
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Trophy } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -27,10 +27,16 @@ export function PublicPureRRView({ tournament, matches: initialMatches, players 
   const [matches,      setMatches]      = useState<Match[]>(initialMatches)
   const [activeRound,  setActiveRound]  = useState<number | null>(null)
 
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const debouncedRefresh = () => {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current)
+    refreshTimer.current = setTimeout(() => { router.refresh() }, 400)
+  }
+
   useEffect(() => {
     const ch = supabase.channel(`pub-prr-${tournament.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'matches', filter: `tournament_id=eq.${tournament.id}` }, () => router.refresh())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'games' }, () => router.refresh())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'matches', filter: `tournament_id=eq.${tournament.id}` }, debouncedRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'games' }, debouncedRefresh)
       .subscribe()
     return () => { supabase.removeChannel(ch) }
   }, [tournament.id])

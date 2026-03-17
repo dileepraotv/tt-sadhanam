@@ -228,7 +228,7 @@ export async function saveGameScore(
       .from('matches')
       .update({ [col]: matchWinnerId })
       .eq('id', match.next_match_id)
-    if (propErr) console.error('[saveGameScore] propagation failed:', propErr.message)
+    if (propErr) return { success: false, error: `Match complete but bracket advance failed: ${propErr.message}. Please refresh and try again.` }
   }
 
   // ── 9b-DE. Route loser into Losers Bracket (double-elimination only) ───────
@@ -243,7 +243,7 @@ export async function saveGameScore(
         .from('matches')
         .update({ [col]: loserId })
         .eq('id', loserNextMatchId)
-      if (lbErr) console.error('[saveGameScore] LB routing failed:', lbErr.message)
+      if (lbErr) return { success: false, error: `Match complete but Losers Bracket routing failed: ${lbErr.message}. Please refresh and try again.` }
     }
   }
 
@@ -341,7 +341,7 @@ export async function deleteGameScore(
     if (newWinnerId !== previousWinnerId) {
       const { data: nextMatch } = await supabase
         .from('matches')
-        .select('player1_id, player2_id, status')
+        .select('id, player1_id, player2_id, status, next_match_id, winner_id')
         .eq('id', match.next_match_id)
         .single()
 
@@ -351,6 +351,14 @@ export async function deleteGameScore(
         await supabase.from('matches')
           .update({ [col]: newWinnerId ?? null })
           .eq('id', match.next_match_id)
+      } else if (nextMatch && nextMatch.status === 'complete') {
+        // Downstream match is also complete — admin must be warned but we cannot
+        // safely auto-cascade without corrupting more data. Return a descriptive error.
+        return {
+          success: false,
+          error:   'This match result has already progressed to a completed downstream match. ' +
+                   'Please correct the downstream match first before editing this score.',
+        }
       }
     }
   }
@@ -421,7 +429,8 @@ export async function declareMatchWinner(
     .eq('id', matchId)
     .single()
 
-  if (!match) return { success: false, error: 'Match not found' }
+  if (!match) return
+  if (match.status === 'complete') return  // guard: cannot re-live a completed match
   // Allow declaring winner for team submatches (player1_id/player2_id are null in DB)
   const isTeamSub = match.match_kind === 'team_submatch'
   if (!isTeamSub && winnerId !== match.player1_id && winnerId !== match.player2_id)

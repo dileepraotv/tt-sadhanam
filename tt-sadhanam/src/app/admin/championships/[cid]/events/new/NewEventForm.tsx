@@ -198,7 +198,7 @@ export function NewEventForm({ cid, createAction }: Props) {
   const today = new Date().toISOString().split('T')[0]
 
   const [formatType,  setFormatTypeState] = useState<FormatType>('single_knockout')
-  const [name,        setName]            = useState(`${SINGLE_STAGE_OPTIONS[0].defaultName} ${getDateSuffix()}`)
+  const [name,        setName]            = useState(SINGLE_STAGE_OPTIONS[0].defaultName)
   const [nameEdited,  setNameEdited]      = useState(false)
   const [date,        setDate]            = useState(today)
   const [busy,        setBusy]            = useState(false)
@@ -209,7 +209,7 @@ export function NewEventForm({ cid, createAction }: Props) {
     setFormatTypeState(value)
     if (!nameEdited) {
       const opt = ALL_OPTIONS.find(o => o.value === value)
-      if (opt) setName(`${opt.defaultName} ${getDateSuffix()}`)
+      if (opt) setName(opt.defaultName)
     }
   }
 
@@ -255,7 +255,7 @@ export function NewEventForm({ cid, createAction }: Props) {
             id="event-name"
             value={name}
             onChange={e => handleNameChange(e.target.value)}
-            placeholder="e.g. Under 13 Boys"
+            placeholder={`e.g. Under 13 Boys or ${SINGLE_STAGE_OPTIONS[0].defaultName} ${getDateSuffix()}`}
             required
             className={cn(
               'flex h-10 w-full rounded-lg border-2 bg-card px-3 py-2 text-sm text-foreground',

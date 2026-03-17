@@ -35,6 +35,7 @@ async function getData(cid: string): Promise<{ championship: Championship; allEv
     .from('tournaments')
     .select('*')
     .eq('championship_id', cid)
+    .eq('published', true)   // only show published events to public
     .order('created_at', { ascending: false })
 
   const evIds = (events ?? []).map((e: { id: string }) => e.id)

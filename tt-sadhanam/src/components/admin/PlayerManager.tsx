@@ -74,6 +74,10 @@ export function PlayerManager({ tournament, players }: PlayerManagerProps) {
     const trimmed = name.trim()
     if (!trimmed) { setNameError('Player name cannot be empty'); return }
     if (trimmed.length < 2) { setNameError('Name must be at least 2 characters'); return }
+    if (trimmed.length > 80) { setNameError('Name must be 80 characters or fewer'); return }
+    if (players.some(p => p.name.trim().toLowerCase() === trimmed.toLowerCase())) {
+      setNameError(`A player named "${trimmed}" already exists in this event`); return
+    }
     setNameError('')
     const fd = new FormData()
     fd.set('name', trimmed)

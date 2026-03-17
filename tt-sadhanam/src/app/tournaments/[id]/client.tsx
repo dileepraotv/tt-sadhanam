@@ -36,6 +36,10 @@ import type { RealtimeStatus } from '@/lib/realtime/useRealtimeTournament'
 import { computeAllGroupStandings } from '@/lib/roundrobin/standings'
 import { LiveNowStrip }       from '@/components/public/LiveNowStrip'
 import { PublicRRView }       from '@/components/public/PublicRRView'
+import { PublicDEView }       from '@/components/public/PublicDEView'
+import { PublicPureRRView }   from '@/components/public/PublicPureRRView'
+import { PublicTeamLeagueView } from '@/components/public/PublicTeamLeagueView'
+import { PublicTeamGroupKOView } from '@/components/public/PublicTeamGroupKOView'
 import { MatchDetailDialog }  from '@/components/public/MatchDetailDialog'
 import { Header }             from '@/components/shared/Header'
 import { Breadcrumb }         from '@/components/shared/Breadcrumb'
@@ -183,6 +187,33 @@ export function PublicTournamentClient({
               rrStage={rrStage}
               onMatchClick={handleMatchClick}
             />
+          )}
+
+          {/* Pure Round Robin */}
+          {ft === 'pure_round_robin' && (
+            <PublicPureRRView
+              tournament={tournament}
+              matches={matches}
+              players={players}
+            />
+          )}
+
+          {/* Double Elimination */}
+          {ft === 'double_elimination' && (
+            <PublicDEView
+              tournament={tournament}
+              matches={matches}
+            />
+          )}
+
+          {/* Team League (RR + KO) */}
+          {(ft === 'team_league' || ft === 'team_league_ko' || ft === 'team_league_swaythling') && (
+            <PublicTeamLeagueView tournament={tournament} />
+          )}
+
+          {/* Team Groups + KO */}
+          {(ft === 'team_group_corbillon' || ft === 'team_group_swaythling') && (
+            <PublicTeamGroupKOView tournament={tournament} />
           )}
         </div>
 
