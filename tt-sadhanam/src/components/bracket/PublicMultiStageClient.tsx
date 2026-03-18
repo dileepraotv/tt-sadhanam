@@ -1,4 +1,5 @@
 'use client'
+// cache-bust: 1773802195
 
 /**
  * PublicMultiStageClient.tsx
@@ -195,23 +196,46 @@ function PublicGroupsView({
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Group selector */}
+      {/* Group selector — rich cards matching admin view */}
       <div className="flex flex-wrap gap-2">
         {standings.map((gs, idx) => {
-          const allDone = gs.standings.every(s => s.matchesPlayed > 0)
+          const played  = gs.standings.some(s => s.matchesPlayed > 0)
+          const allDone = gs.standings.length > 0 && gs.standings.every(s =>
+            s.matchesPlayed === gs.standings.length - 1
+          )
+          const isActive = activeGroup === idx
           return (
             <button
               key={gs.group.id}
               onClick={() => setActiveGroup(idx)}
               className={cn(
-                'px-4 py-1.5 rounded-full text-sm font-semibold border transition-colors',
-                activeGroup === idx
-                  ? 'bg-primary text-primary-foreground border-primary'
-                  : 'bg-card text-foreground border-border hover:border-orange-400',
+                'flex flex-col gap-2 px-4 py-3 rounded-xl border text-left transition-all min-w-[140px]',
+                isActive
+                  ? 'bg-orange-500 text-white border-orange-500 shadow-md shadow-orange-200/40 dark:shadow-orange-900/20'
+                  : 'bg-card text-foreground border-border hover:border-orange-400 hover:shadow-sm',
               )}
             >
-              {gs.group.name}
-              {allDone && <span className="ml-1.5 text-[10px] opacity-60">✓</span>}
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-bold">{gs.group.name}</span>
+                {allDone && <span className={cn('text-[10px] font-bold', isActive ? 'text-white/80' : 'text-emerald-500')}>✓ Done</span>}
+                {!allDone && played && <span className={cn('h-2 w-2 rounded-full shrink-0 animate-pulse', isActive ? 'bg-white/60' : 'bg-orange-400')} />}
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {gs.standings.slice(0, 6).map((s, si) => (
+                  <span key={s.playerId} title={s.playerName}
+                    className={cn(
+                      'text-[10px] font-medium truncate max-w-[70px]',
+                      isActive ? 'text-white/90' : 'text-muted-foreground',
+                    )}>
+                    <span className={cn('font-mono opacity-60 mr-0.5', isActive ? 'text-white/60' : '')}>{si + 1}.</span>{s.playerName.split(' ')[0]}
+                  </span>
+                ))}
+                {gs.standings.length > 6 && (
+                  <span className={cn('text-[10px]', isActive ? 'text-white/60' : 'text-muted-foreground/50')}>
+                    +{gs.standings.length - 6}
+                  </span>
+                )}
+              </div>
             </button>
           )
         })}
@@ -261,11 +285,9 @@ function PublicGroupsView({
                         </span>
                       </td>
                       <td className="py-2.5 pr-3">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5">
                           {s.playerSeed && (
-                            <span className="text-[10px] text-muted-foreground font-mono bg-muted/60 px-1 rounded">
-                              [{s.playerSeed}]
-                            </span>
+                            <span className="seed-badge shrink-0">{s.playerSeed}</span>
                           )}
                           <span className="font-medium text-foreground">{s.playerName}</span>
                           {s.playerClub && (

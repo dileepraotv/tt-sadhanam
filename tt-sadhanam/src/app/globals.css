@@ -1,4 +1,5 @@
 /*
+// cache-bust: 1773802195
  * SADHANAM — Table Tennis Tournament Manager
  * Theme: ICICI Orange (#F06321) palette · Calibri font · Black text
  * #F06321 → hsl(19, 87%, 53%)
@@ -506,7 +507,7 @@
    * Use these instead of inline max-w-* so width strategy is centralized.  *
    *                                                                         *
    * .page-shell    — outermost page wrapper (flex-1 column)                *
-   * .page-content  — standard page content: max 1280px, responsive pad     *
+   * .page-content  — standard page content: max 1152px (6xl), responsive pad *
    * .page-wide     — wide content (brackets, standings): max 1400px        *
    * .page-narrow   — compact content (settings, forms): max 768px          *
    * ─────────────────────────────────────────────────────────────────────── */
@@ -514,7 +515,7 @@
     @apply flex-1 w-full;
   }
   .page-content {
-    @apply mx-auto w-full max-w-screen-xl px-4 sm:px-6 py-6;
+    @apply mx-auto w-full max-w-6xl px-4 sm:px-6 py-6;
   }
   .page-wide {
     @apply mx-auto w-full max-w-[1400px] px-4 sm:px-6 py-6;
