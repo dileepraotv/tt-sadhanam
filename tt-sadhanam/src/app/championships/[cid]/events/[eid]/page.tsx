@@ -67,10 +67,11 @@ export default async function PublicEventPage({ params }: PageProps) {
   const isSingleRR     = tournament.format_type === 'single_round_robin'
   const isPureRR       = tournament.format_type === 'pure_round_robin'
   const isDE           = tournament.format_type === 'double_elimination'
-  const isTeamGroupKO  = tournament.format_type === 'team_group_corbillon'
+  const isTeamGroupKO  = ['team_group_corbillon', 'team_group_swaythling',
+                             'team_league_ko', 'team_league_swaythling']
+                            .includes(tournament.format_type ?? '')
                       || tournament.format_type === 'team_group_swaythling'
-  const isTeamLeague   = ['team_league', 'team_league_ko', 'team_league_swaythling']
-                        .includes(tournament.format_type ?? '') || isTeamGroupKO
+  const isTeamLeague   = tournament.format_type === 'team_league' || isTeamGroupKO
   const needsRRData    = isMultiStage || isSingleRR || isPureRR
 
   let rrStage:       Stage | null = null

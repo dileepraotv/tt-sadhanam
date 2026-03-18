@@ -714,8 +714,18 @@ function TeamSetupView({
         <NextStepBanner variant="warning" title="Assign players to all teams"
           description="Each team needs at least one player before generating the schedule." />
       ) : (
-        <NextStepBanner variant="action" step="Step 2" title="Generate schedule"
-          description={`${teams.length} teams → ${teamMatchCount} fixtures.`} />
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex-1 min-w-0">
+            <NextStepBanner variant="action" step="Step 2" title="Generate schedule"
+              description={`${teams.length} teams → ${teamMatchCount} fixtures.`} />
+          </div>
+          <Button onClick={handleGenerate} disabled={isPending || !canGenerate} className="gap-2 shrink-0">
+            {isPending
+              ? <><span className="tt-spinner tt-spinner-sm" /> Generating…</>
+              : <><PlayCircle className="h-4 w-4" /> {isKOFormat ? 'Generate Corbillon Bracket' : isSwaythlingFormat ? 'Generate Swaythling Bracket' : 'Generate Schedule'}</>
+            }
+          </Button>
+        </div>
       )}
 
       {/* Teams list */}

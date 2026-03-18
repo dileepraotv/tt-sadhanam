@@ -655,7 +655,7 @@ function TeamsTab({ tournament, teams, teamMatches, stage, loadData, isPending, 
   const [showReset,  setShowReset]  = useState(false)
 
   const hasFixtures = teamMatches.some(m => m.group_id != null)
-  const isCorbillon = tournament.format_type === 'team_group_corbillon'
+  const isCorbillon = tournament.format_type === 'team_group_corbillon' || tournament.format_type === 'team_league_ko'
   const playerCount = isCorbillon ? 2 : 3
 
   const handleAdd = async (data: TeamFormData) => {
@@ -2239,7 +2239,7 @@ export function TeamGroupKOStage({ tournament, matchBase }: {
   const router                       = useRouter()
   const { teams, teamMatches, groups, stage, loading, loadData } = useTeamGroupData(tournament.id)
 
-  const isCorbillon  = tournament.format_type === 'team_group_corbillon'
+  const isCorbillon  = tournament.format_type === 'team_group_corbillon' || tournament.format_type === 'team_league_ko'
   const formatLabel  = isCorbillon ? 'Corbillon Cup' : 'Swaythling Cup'
 
   const [activeTab, setActiveTab] = useState<'teams' | 'groups' | 'knockout'>('teams')

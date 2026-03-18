@@ -206,13 +206,14 @@ export function PublicTournamentClient({
             />
           )}
 
-          {/* Team League (RR + KO) */}
-          {(ft === 'team_league' || ft === 'team_league_ko' || ft === 'team_league_swaythling') && (
+          {/* Team League (RR only) */}
+          {ft === 'team_league' && (
             <PublicTeamLeagueView tournament={tournament} />
           )}
 
-          {/* Team Groups + KO */}
-          {(ft === 'team_group_corbillon' || ft === 'team_group_swaythling') && (
+          {/* Team Groups + KO (all bracket-style formats) */}
+          {(ft === 'team_group_corbillon' || ft === 'team_group_swaythling' ||
+            ft === 'team_league_ko' || ft === 'team_league_swaythling') && (
             <PublicTeamGroupKOView tournament={tournament} />
           )}
         </div>

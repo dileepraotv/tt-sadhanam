@@ -89,7 +89,7 @@ export function PublicMultiStageClient({
       )}
 
       {/* Tab switcher — white surface so tabs are visible on the orange page background */}
-      <div className="bg-card border-b border-border -mx-4 sm:mx-0 px-4 py-3">
+      <div className="border-b border-border/60 -mx-4 sm:mx-0 px-4 py-3">
         <div className="flex gap-2">
         <button
           onClick={() => setActiveTab('groups')}

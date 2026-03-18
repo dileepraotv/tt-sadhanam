@@ -183,7 +183,7 @@ export function PublicTeamGroupKOView({ tournament }: { tournament: Tournament }
   return (
     <div className="flex flex-col">
       {/* Tab bar — white surface so tabs are visible on orange page background */}
-      <div className="bg-card border-b border-border flex gap-1 px-4 sm:px-6">
+      <div className="border-b border-border/60 flex gap-1 px-4 sm:px-6">
         {([
           { key: 'groups',   label: 'Groups',   icon: <Layers className="h-3.5 w-3.5" /> },
           { key: 'knockout', label: 'Knockout',  icon: <Trophy className="h-3.5 w-3.5" />, disabled: !hasKO },
@@ -196,7 +196,7 @@ export function PublicTeamGroupKOView({ tournament }: { tournament: Tournament }
               'flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px',
               tab === t.key
                 ? 'border-orange-500 text-orange-600 dark:text-orange-400 font-semibold'
-                : 'border-transparent text-foreground/70 hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed',
+                : 'border-transparent text-foreground/80 hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed',
             )}
           >
             {t.icon}

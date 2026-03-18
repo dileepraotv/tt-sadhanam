@@ -87,13 +87,13 @@ export default async function AdminEventPage({ params, searchParams }: PageProps
     isMultiStage   ? ['players','stage1','stage2'] :
     isSingleRR     ? (tournament.stage1_complete ? ['players','groups','knockout'] : ['players','groups']) :
     isTeamLeague   ? ['teams','schedule','knockout'] :
-    (isTeamLeagueKO || isTeamSwaythling) ? ['teams','bracket'] :
+    (isTeamLeagueKO || isTeamSwaythling) ? ['teams','knockout'] :
     isTeamGroupKO  ? ['teams','groups','knockout'] :
     ['players','stages']
   // When active/bracket generated, default to the action tab; for setup, show players/teams
   const defaultTabKey = (() => {
     if (isTeamLeagueKO || isTeamSwaythling) {
-      return tournament.bracket_generated ? 'bracket' : 'teams'
+      return tournament.bracket_generated ? 'knockout' : 'teams'
     }
     if (isTeamLeague) {
       return tournament.bracket_generated ? 'schedule' : 'teams'
@@ -335,43 +335,7 @@ export default async function AdminEventPage({ params, searchParams }: PageProps
                   />
                 </TabsContent>
               </>
-            ) : isTeamLeagueKO ? (
-              <>
-                <TabsContent value="teams">
-                  <TeamLeagueStage
-                    tournament={tournament}
-                    matchBase={matchBase}
-                    view="teams"
-                    showSeedInput={true}
-                  />
-                </TabsContent>
-                <TabsContent value="bracket">
-                  <TeamLeagueStage
-                    tournament={tournament}
-                    matchBase={matchBase}
-                    view="bracket"
-                  />
-                </TabsContent>
-              </>
-            ) : isTeamSwaythling ? (
-              <>
-                <TabsContent value="teams">
-                  <TeamLeagueStage
-                    tournament={tournament}
-                    matchBase={matchBase}
-                    view="teams"
-                    showSeedInput={true}
-                  />
-                </TabsContent>
-                <TabsContent value="bracket">
-                  <TeamLeagueStage
-                    tournament={tournament}
-                    matchBase={matchBase}
-                    view="bracket"
-                  />
-                </TabsContent>
-              </>
-            ) : isTeamGroupKO ? (
+            ) : (isTeamLeagueKO || isTeamSwaythling || isTeamGroupKO) ? (
               <TabsContent value="teams">
                 <TeamGroupKOStage tournament={tournament} matchBase={matchBase} />
               </TabsContent>
