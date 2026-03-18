@@ -32,6 +32,7 @@ import { createClient }      from '@/lib/supabase/client'
 import {
   createTeam, updateTeam, deleteTeam, upsertTeamPlayers,
   batchUpdateSubmatchPlayers,
+  generateTeamKOBracket, generateTeamSwaythlingBracket,
 } from '@/lib/actions/teamLeague'
 import {
   createTeamRRStage, generateTeamGroups, generateTeamGroupFixtures,
@@ -636,7 +637,7 @@ function BulkImportDialog({ tournamentId, existingTeamCount, isCorbillon, onClos
 // TeamsTab — add/edit/import teams with bulk import + Excel support
 // ─────────────────────────────────────────────────────────────────────────────
 
-function TeamsTab({ tournament, teams, teamMatches, stage, loadData, isPending, startTransition, setLoading, router, onNext, formatLabel }: {
+function TeamsTab({ tournament, teams, teamMatches, stage, loadData, isPending, startTransition, setLoading, router, onNext, formatLabel, isKOOnly = false, koExists = false, onGenerateKO }: {
   tournament:      Tournament
   teams:           TeamWithPlayers[]
   teamMatches:     TeamMatchRich[]
@@ -646,8 +647,11 @@ function TeamsTab({ tournament, teams, teamMatches, stage, loadData, isPending, 
   startTransition: ReturnType<typeof useTransition>[1]
   setLoading:      (v: boolean) => void
   router:          ReturnType<typeof useRouter>
-  onNext:          () => void
+  onNext?:         () => void
   formatLabel:     string
+  isKOOnly?:       boolean
+  koExists?:       boolean
+  onGenerateKO?:   () => void
 }) {
   const [editingId,  setEditingId]  = useState<string | null>(null)
   const [showAdd,    setShowAdd]    = useState(false)
@@ -737,13 +741,29 @@ function TeamsTab({ tournament, teams, teamMatches, stage, loadData, isPending, 
           description={isCorbillon
             ? 'Each team needs 2 players (A and B). Add individually or bulk import below.'
             : 'Each team needs 3 players (A, B, C). Add individually or bulk import below.'} />
-      ) : hasFixtures ? (
-        <NextStepBanner variant="action" title="Fixtures generated"
-          description="Group fixtures are locked. Go to the Groups tab to view standings." />
+      ) : (hasFixtures || (isKOOnly && koExists)) ? (
+        <NextStepBanner variant="action" title={koExists ? 'Bracket generated' : 'Fixtures generated'}
+          description={isKOOnly
+            ? 'Bracket is ready. Go to the Knockout tab to score matches.'
+            : 'Group fixtures are locked. Go to the Groups tab to view standings.'} />
       ) : missingPlayers.length > 0 ? (
         <NextStepBanner variant="warning"
           title={`${missingPlayers.length} team${missingPlayers.length !== 1 ? 's' : ''} need${missingPlayers.length === 1 ? 's' : ''} ${playerCount} players`}
-          description="Assign all players before configuring groups." />
+          description={isKOOnly ? 'Assign all players before generating the bracket.' : 'Assign all players before configuring groups.'} />
+      ) : isKOOnly ? (
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex-1 min-w-0">
+            <NextStepBanner variant="action" step="Step 2"
+              title={`${teams.length} teams ready — generate bracket`}
+              description="Teams will be seeded into the bracket by their seed number." />
+          </div>
+          <Button onClick={onGenerateKO} disabled={isPending || teams.length < 2} className="gap-2 shrink-0">
+            {isPending
+              ? <><span className="tt-spinner tt-spinner-sm" /> Generating…</>
+              : <><PlayCircle className="h-4 w-4" /> {isCorbillon ? 'Generate Corbillon Bracket' : 'Generate Swaythling Bracket'}</>
+            }
+          </Button>
+        </div>
       ) : (
         <NextStepBanner variant="action" step="Step 2"
           title={`${teams.length} teams ready — configure groups next`}
@@ -767,7 +787,7 @@ function TeamsTab({ tournament, teams, teamMatches, stage, loadData, isPending, 
               <RefreshCw className="h-3.5 w-3.5" /> Reset
             </Button>
           )}
-          {!hasFixtures && (
+          {(!hasFixtures && !koExists) && (
             <>
               <Button size="sm" variant="outline" onClick={() => setShowImport(true)} disabled={isPending}
                 className="gap-1.5">
@@ -2228,8 +2248,12 @@ export function TeamGroupKOStage({ tournament, matchBase }: {
 
   const isCorbillon  = tournament.format_type === 'team_group_corbillon' || tournament.format_type === 'team_league_ko'
   const formatLabel  = isCorbillon ? 'Corbillon Cup' : 'Swaythling Cup'
+  // KO-only formats: team_league_ko and team_league_swaythling have no group stage
+  const isKOOnly = tournament.format_type === 'team_league_ko'
+               || tournament.format_type === 'team_league_swaythling'
 
-  const [activeTab, setActiveTab] = useState<'teams' | 'groups' | 'knockout'>('teams')
+  type TabKey = 'teams' | 'groups' | 'knockout'
+  const [activeTab, setActiveTab] = useState<TabKey>('teams')
 
   const rrMatches     = teamMatches.filter(m => m.group_id != null)
   const koMatches     = teamMatches.filter(m => m.group_id == null && m.round >= 900)
@@ -2239,16 +2263,34 @@ export function TeamGroupKOStage({ tournament, matchBase }: {
 
   useEffect(() => {
     if (koExists) setActiveTab('knockout')
-    else if (stage) setActiveTab('groups')
-  }, [stage?.id, koExists])
+    else if (!isKOOnly && stage) setActiveTab('groups')
+  }, [stage?.id, koExists, isKOOnly])
 
   if (loading) return <InlineLoader label="Loading team data…" />
 
-  const tabs: { key: 'teams' | 'groups' | 'knockout'; label: string; icon: React.ReactNode; done?: boolean }[] = [
-    { key: 'teams',    label: 'Teams',    icon: <Users className="h-4 w-4" />, done: teams.length >= 2 },
-    { key: 'groups',   label: 'Groups',   icon: <Layers className="h-4 w-4" />, done: fixturesExist },
-    { key: 'knockout', label: 'Knockout', icon: <Trophy className="h-4 w-4" />, done: koExists },
+  const tabs = [
+    { key: 'teams'    as TabKey, label: 'Teams',    icon: <Users className="h-4 w-4" />, done: teams.length >= 2 },
+    ...(!isKOOnly ? [{ key: 'groups' as TabKey, label: 'Groups', icon: <Layers className="h-4 w-4" />, done: fixturesExist }] : []),
+    { key: 'knockout' as TabKey, label: 'Knockout', icon: <Trophy className="h-4 w-4" />, done: koExists },
   ]
+
+  // KO-only generate handler — bypasses group stage
+  const handleGenerateKODirect = () => {
+    setLoading(true)
+    startTransition(async () => {
+      const res = isCorbillon
+        ? await generateTeamKOBracket(tournament.id)
+        : await generateTeamSwaythlingBracket(tournament.id)
+      setLoading(false)
+      if (res.error) {
+        toast({ title: 'Generation failed', description: res.error, variant: 'destructive' })
+      } else {
+        await loadData(); router.refresh()
+        toast({ title: '✅ Bracket generated', variant: 'success' })
+        setActiveTab('knockout')
+      }
+    })
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -2286,13 +2328,16 @@ export function TeamGroupKOStage({ tournament, matchBase }: {
           startTransition={startTransition}
           setLoading={setLoading}
           router={router}
-          onNext={() => setActiveTab('groups')}
+          onNext={isKOOnly ? undefined : () => setActiveTab('groups')}
           formatLabel={formatLabel}
+          isKOOnly={isKOOnly}
+          koExists={koExists}
+          onGenerateKO={isKOOnly ? handleGenerateKODirect : undefined}
         />
       )}
 
-      {/* Tab: Groups */}
-      {activeTab === 'groups' && (
+      {/* Tab: Groups (Groups+KO formats only) */}
+      {activeTab === 'groups' && !isKOOnly && (
         <GroupsTab
           tournament={tournament}
           teams={teams}
