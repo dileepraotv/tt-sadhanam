@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation'
+// cache-bust: 1773800313
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { Header } from '@/components/shared/Header'
@@ -148,7 +149,7 @@ export default async function PublicEventPage({ params }: PageProps) {
       {/* Event hero — consistent with admin page hero */}
       <div className="relative border-b border-border/60 overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-orange-500/5 via-transparent to-transparent pointer-events-none" />
-        <div className="mx-auto w-full max-w-screen-xl px-4 sm:px-6 py-6 sm:py-8 relative">
+        <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 py-6 sm:py-8 relative">
 
           {/* Champion banner */}
           {champion && (

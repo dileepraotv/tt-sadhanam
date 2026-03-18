@@ -1,5 +1,5 @@
 'use client'
-// cache-bust: 1773593664
+// cache-bust: 1773800313
 
 /**
  * GroupStandingsTable
@@ -10,6 +10,8 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { AlertTriangle } from 'lucide-react'
+import { validateGameScore, formatValidationErrors } from '@/lib/scoring/engine'
 import Link from 'next/link'
 import { MatchCard } from '@/components/bracket/MatchCard'
 import { cn } from '@/lib/utils'
@@ -435,6 +437,8 @@ function InlineMatchScorer({ matchId, player1Name, player2Name }: {
   const [format,      setFormat]   = useState<'bo3'|'bo5'|'bo7'>('bo5')
   const [p1Id,        setP1Id]     = useState<string | null>(null)
   const [p2Id,        setP2Id]     = useState<string | null>(null)
+  const [scoreErrors,  setScoreErrors] = useState<Record<number, string>>({})
+  const [saveError,    setSaveError]   = useState<string | null>(null)
   const sb = useRef(createClientForScorer()).current
 
   const load = useCallback(async () => {
@@ -458,12 +462,25 @@ function InlineMatchScorer({ matchId, player1Name, player2Name }: {
 
   const maxG = format === 'bo3' ? 3 : format === 'bo7' ? 7 : 5
 
+  const validateScore = (s1: number, s2: number): string | null => {
+    const result = validateGameScore({ score1: s1, score2: s2 })
+    return result.ok ? null : formatValidationErrors(result)
+  }
+
   const handleSave = async () => {
+    setSaveError(null)
     setSaving(true)
     const entries = Array.from({length:maxG},(_,i)=>i+1)
       .map(gn=>({gn,sc:local[gn]}))
       .filter(({sc})=>sc&&!(sc.s1===''&&sc.s2===''))
     if (!entries.length) { setSaving(false); return }
+    // Validate all scores before saving
+    for (const {gn, sc} of entries) {
+      const s1 = parseInt(sc!.s1, 10), s2 = parseInt(sc!.s2, 10)
+      if (isNaN(s1) || isNaN(s2)) { setSaveError(`Game ${gn}: enter valid numbers`); setSaving(false); return }
+      const err = validateScore(s1, s2)
+      if (err) { setSaveError(`Game ${gn}: ${err}`); setSaving(false); return }
+    }
     // Reset if match was already complete
     const isWasComplete = games.length > 0
     if (isWasComplete) {
@@ -526,13 +543,29 @@ function InlineMatchScorer({ matchId, player1Name, player2Name }: {
           return (
             <input key={gn} type="number" min={0} max={99}
               value={local[gn]?.s2??''}
-              onChange={e=>setLocal(p=>({...p,[gn]:{...p[gn]??{s1:'',s2:''},s2:e.target.value}}))}
+              onChange={e=>{
+                const ns2=e.target.value
+                const upd={...local[gn]??{s1:'',s2:''},s2:ns2}
+                setLocal(p=>({...p,[gn]:upd}))
+                if(upd.s1!==''&&ns2!==''){const v1=parseInt(upd.s1,10),v2=parseInt(ns2,10);if(!isNaN(v1)&&!isNaN(v2))setScoreErrors(p=>({...p,[gn]:validateScore(v1,v2)??''}))}
+                else setScoreErrors(p=>{const n={...p};delete n[gn];return n})
+              }}
               className={cn('w-full text-center text-sm font-bold py-1.5 rounded-lg border focus:outline-none focus:ring-2 focus:ring-orange-500/40 [appearance:textfield]',
-                bWon&&stored?'border-emerald-400/50 bg-emerald-50/60 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300':'border-border bg-background')}
+                scoreErrors[gn]?'border-red-400 bg-red-50/40 dark:bg-red-950/20':bWon&&stored?'border-emerald-400/50 bg-emerald-50/60 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300':'border-border bg-background')}
             />
           )
         })}
       </div>
+      {Object.entries(scoreErrors).filter(([,e])=>e).map(([gn,err])=>(
+        <p key={gn} className="text-xs text-red-600 dark:text-red-400 font-medium flex items-center gap-1 mt-0.5">
+          <AlertTriangle className="h-3 w-3 shrink-0"/> Game {gn}: {err}
+        </p>
+      ))}
+      {saveError && (
+        <p className="text-xs text-red-600 dark:text-red-400 font-medium flex items-center gap-1 mt-0.5">
+          <AlertTriangle className="h-3 w-3 shrink-0"/> {saveError}
+        </p>
+      )}
       <div className="flex items-center gap-2 flex-wrap">
         <button onClick={handleSave} disabled={saving}
           className="px-4 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold transition-colors disabled:opacity-50 flex items-center gap-1.5">

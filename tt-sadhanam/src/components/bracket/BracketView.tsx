@@ -1,5 +1,5 @@
 'use client'
-// cache-bust: 1773593664
+// cache-bust: 1773800313
 
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { cn } from '@/lib/utils'
@@ -9,6 +9,7 @@ import { getRoundTab } from '@/lib/utils'
 import type { Match, Game } from '@/lib/types'
 import { MatchCard } from './MatchCard'
 import { Check, Trophy, AlertTriangle } from 'lucide-react'
+import { validateGameScore, formatValidationErrors } from '@/lib/scoring/engine'
 
 interface BracketViewProps {
   tournament:    { id: string; name: string }
@@ -545,17 +546,13 @@ export function SingleMatchInlineScorer({ matchId, player1Name, player2Name, onS
     await updateMatchFormat(matchId, f)
   }
 
-  const [saveError, setSaveError] = useState<string | null>(null)
+  const [saveError,    setSaveError]    = useState<string | null>(null)
+  const [scoreErrors,  setScoreErrors]  = useState<Record<number, string>>({})
 
-  // TT score validation
+  // TT score validation — uses the shared scoring engine (single source of truth)
   const validateScore = (s1: number, s2: number): string | null => {
-    if (s1 < 0 || s2 < 0) return 'Scores cannot be negative'
-    const max = Math.max(s1, s2), min = Math.min(s1, s2)
-    if (max < 11) return `Winner needs at least 11 points (got ${max})`
-    if (min >= 10 && max - min < 2) return `At deuce, must win by 2 — ${s1}-${s2} is invalid`
-    if (min >= 10 && max - min > 2) return `At deuce, must win by exactly 2`
-    if (min < 10 && max > 11) return `Game ends at 11 when opponent has < 10`
-    return null
+    const result = validateGameScore({ score1: s1, score2: s2 })
+    return result.ok ? null : formatValidationErrors(result)
   }
 
   const handleSave = async () => {
@@ -628,10 +625,19 @@ export function SingleMatchInlineScorer({ matchId, player1Name, player2Name, onS
           return (
             <input key={gn} type="number" min={0} max={99}
               value={local[gn]?.s1 ?? ''}
-              onChange={e => setLocal(p => ({...p, [gn]: {...(p[gn] ?? {s1:'',s2:''}), s1: e.target.value}}))}
+              onChange={e => {
+                const newS1 = e.target.value
+                const updated = {...(local[gn] ?? {s1:'',s2:''}), s1: newS1}
+                setLocal(p => ({...p, [gn]: updated}))
+                if (newS1 !== '' && updated.s2 !== '') {
+                  const v1 = parseInt(newS1, 10), v2 = parseInt(updated.s2, 10)
+                  if (!isNaN(v1) && !isNaN(v2)) setScoreErrors(p => ({...p, [gn]: validateScore(v1,v2) ?? ''}))
+                } else setScoreErrors(p => {const n={...p}; delete n[gn]; return n})
+              }}
               disabled={saving}
               className={cn(
                 'w-full text-center text-sm font-bold py-1.5 rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500/40 [appearance:textfield]',
+                scoreErrors[gn] ? 'border-red-400 bg-red-50/40 dark:bg-red-950/20' :
                 won && stored ? 'border-emerald-400/50 bg-emerald-50/60 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300' : 'border-border bg-background',
                 saving && 'opacity-40',
               )}
@@ -647,10 +653,19 @@ export function SingleMatchInlineScorer({ matchId, player1Name, player2Name, onS
           return (
             <input key={gn} type="number" min={0} max={99}
               value={local[gn]?.s2 ?? ''}
-              onChange={e => setLocal(p => ({...p, [gn]: {...(p[gn] ?? {s1:'',s2:''}), s2: e.target.value}}))}
+              onChange={e => {
+                const newS2 = e.target.value
+                const updated = {...(local[gn] ?? {s1:'',s2:''}), s2: newS2}
+                setLocal(p => ({...p, [gn]: updated}))
+                if (updated.s1 !== '' && newS2 !== '') {
+                  const v1 = parseInt(updated.s1, 10), v2 = parseInt(newS2, 10)
+                  if (!isNaN(v1) && !isNaN(v2)) setScoreErrors(p => ({...p, [gn]: validateScore(v1,v2) ?? ''}))
+                } else setScoreErrors(p => {const n={...p}; delete n[gn]; return n})
+              }}
               disabled={saving}
               className={cn(
                 'w-full text-center text-sm font-bold py-1.5 rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500/40 [appearance:textfield]',
+                scoreErrors[gn] ? 'border-red-400 bg-red-50/40 dark:bg-red-950/20' :
                 won && stored ? 'border-emerald-400/50 bg-emerald-50/60 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300' : 'border-border bg-background',
                 saving && 'opacity-40',
               )}
@@ -658,6 +673,13 @@ export function SingleMatchInlineScorer({ matchId, player1Name, player2Name, onS
           )
         })}
       </div>
+
+      {/* Per-game inline validation errors */}
+      {Object.entries(scoreErrors).filter(([,e]) => e).map(([gn, err]) => (
+        <p key={gn} className="text-xs text-red-600 dark:text-red-400 font-medium flex items-center gap-1">
+          <AlertTriangle className="h-3 w-3 shrink-0" /> Game {gn}: {err}
+        </p>
+      ))}
 
       {/* Save */}
       <div className="flex flex-col gap-1.5 pt-1">

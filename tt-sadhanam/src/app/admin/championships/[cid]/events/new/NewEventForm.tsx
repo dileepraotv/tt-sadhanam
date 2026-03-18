@@ -1,4 +1,5 @@
 'use client'
+// cache-bust: 1773800313
 
 import { useState, useRef } from 'react'
 import { useLoading } from '@/components/shared/GlobalLoader'
@@ -198,7 +199,7 @@ export function NewEventForm({ cid, createAction }: Props) {
   const today = new Date().toISOString().split('T')[0]
 
   const [formatType,  setFormatTypeState] = useState<FormatType>('single_knockout')
-  const [name,        setName]            = useState(`${SINGLE_STAGE_OPTIONS[0].defaultName} ${getDateSuffix()}`)
+  const [name,        setName]            = useState(() => `${SINGLE_STAGE_OPTIONS[0].defaultName} ${getDateSuffix()}`)
   const [nameEdited,  setNameEdited]      = useState(false)
   const [date,        setDate]            = useState(today)
   const [busy,        setBusy]            = useState(false)
