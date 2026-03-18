@@ -51,17 +51,8 @@ export function AdminChampTabs({
 
   // ── Team Group KO (Corbillon / Swaythling Groups + Knockout) ─────────────────
   if (ft === 'team_group_corbillon' || ft === 'team_group_swaythling') {
-    return (
-      <Tabs value={currentTab} onValueChange={handleChange}>
-        <TabsList className="w-full sm:w-auto mb-6 overflow-x-auto shrink-0">
-          <TabsTrigger value="teams" className="flex-none gap-1.5">
-            <Shield className="h-3.5 w-3.5 hidden sm:block" />
-            Teams
-          </TabsTrigger>
-        </TabsList>
-        {children}
-      </Tabs>
-    )
+    // TeamGroupKOStage manages its own Teams/Groups/Knockout tabs — no outer wrapper needed
+    return <>{children}</>
   }
 
   // ── Team League RR+KO ─────────────────────────────────────────────────────

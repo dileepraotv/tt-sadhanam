@@ -1104,6 +1104,20 @@ function FixtureDetailPanel({
   const teamA  = teams.find(t => t.id === match.team_a_id) ?? null
   const teamB  = teams.find(t => t.id === match.team_b_id) ?? null
   const isLocked = match.status === 'complete'
+
+  // Derive player name from roster using rubber position — shows instantly without waiting for auto-save
+  const derivePlayerName = (sm: Submatch, side: 'a' | 'b'): string | null => {
+    const savedName = side === 'a' ? sm.player_a_name : sm.player_b_name
+    if (savedName) return savedName
+    const team = side === 'a' ? teamA : teamB
+    if (!team?.players.length) return null
+    const m = sm.label.match(/\(([A-Z/]+)\s+vs\s+([A-Z/]+)\)/)
+    if (!m) return null
+    const letter = (side === 'a' ? m[1] : m[2])[0]
+    const posMap: Record<string, number> = { A: 1, B: 2, C: 3, X: 1, Y: 2, Z: 3 }
+    const pos = posMap[letter] ?? 1
+    return team.players.find(p => p.position === pos)?.name ?? null
+  }
   // Use the individual match's saved format if available, fall back to tournament default
   const getMatchFormat = (sm: Submatch): MatchFormat =>
     (sm.scoring?.match_format as MatchFormat | undefined) ?? (tournament.format as MatchFormat) ?? 'bo5'
@@ -1259,7 +1273,7 @@ function FixtureDetailPanel({
                     ) : (
                       <span className={cn('text-sm font-semibold truncate',
                         aWon ? 'font-semibold text-foreground' : bWon ? 'text-muted-foreground' : '',
-                      )}>{sm.player_a_name ?? '—'}</span>
+                      )}>{derivePlayerName(sm, 'a') ?? '—'}</span>
                     )}
                   </div>
                   {/* vs */}
@@ -1280,7 +1294,7 @@ function FixtureDetailPanel({
                     ) : (
                       <span className={cn('text-sm font-semibold truncate',
                         bWon ? 'font-semibold text-foreground' : aWon ? 'text-muted-foreground' : '',
-                      )}>{sm.player_b_name ?? '—'}</span>
+                      )}>{derivePlayerName(sm, 'b') ?? '—'}</span>
                     )}
                   </div>
                   {/* Score + scorer link */}
@@ -1341,9 +1355,9 @@ function FixtureDetailPanel({
                 )}>{idx + 1}</span>
                 <span className="text-xs font-medium text-muted-foreground flex-1">{sm.label}</span>
                 <span className="text-xs text-muted-foreground hidden sm:block">
-                  {sm.player_a_name ?? sm.label.match(/\(([^)]+)\)/)?.[1]?.split(' vs ')?.[0] ?? 'TBD'}
+                  {derivePlayerName(sm, 'a') ?? sm.label.match(/\(([^)]+)\)/)?.[1]?.split(' vs ')?.[0] ?? 'TBD'}
                   {' '}<span className="opacity-40">vs</span>{' '}
-                  {sm.player_b_name ?? sm.label.match(/\(([^)]+)\)/)?.[1]?.split(' vs ')?.[1] ?? 'TBD'}
+                  {derivePlayerName(sm, 'b') ?? sm.label.match(/\(([^)]+)\)/)?.[1]?.split(' vs ')?.[1] ?? 'TBD'}
                 </span>
                 {isRubberDone ? (
                   <span className="text-xs font-semibold font-mono shrink-0">
