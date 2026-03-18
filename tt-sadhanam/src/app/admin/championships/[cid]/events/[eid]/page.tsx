@@ -336,9 +336,11 @@ export default async function AdminEventPage({ params, searchParams }: PageProps
                 </TabsContent>
               </>
             ) : (isTeamLeagueKO || isTeamSwaythling || isTeamGroupKO) ? (
-              <TabsContent value="teams">
+              /* TeamGroupKOStage manages its own Teams/Groups/Knockout tabs internally */
+              /* Render without outer TabsContent so it's always visible regardless of URL tab */
+              <div className="mt-0">
                 <TeamGroupKOStage tournament={tournament} matchBase={matchBase} />
-              </TabsContent>
+              </div>
             ) : (
               /* Default: single_knockout */
               <>

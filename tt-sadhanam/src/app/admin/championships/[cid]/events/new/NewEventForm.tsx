@@ -362,7 +362,7 @@ export function NewEventForm({ cid, createAction }: Props) {
             >
               {busy
                 ? <><span className="tt-spinner tt-spinner-sm" /> Creating…</>
-                : <><Trophy className="h-4 w-4" /> Create {selected.label} Event</>
+                : <><Trophy className="h-4 w-4" /> Create Event</>
               }
             </Button>
           </div>

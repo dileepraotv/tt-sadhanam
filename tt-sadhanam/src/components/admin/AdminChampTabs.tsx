@@ -91,23 +91,8 @@ export function AdminChampTabs({
 
   // ── Team League KO (pure knockout) ───────────────────────────────────────────
   if (ft === 'team_league_ko' || ft === 'team_league_swaythling') {
-    const bracketLabel = ft === 'team_league_swaythling' ? 'Swaythling Bracket' : 'Corbillon Bracket'
-    return (
-      <Tabs value={currentTab} onValueChange={handleChange}>
-        <TabsList className="w-full sm:w-auto mb-6 overflow-x-auto shrink-0">
-          <TabsTrigger value="teams" className="flex-none gap-1.5">
-            <Shield className="h-3.5 w-3.5 hidden sm:block" />
-            Teams
-          </TabsTrigger>
-          <TabsTrigger value="knockout" className="flex-none gap-1.5" disabled={!teamScheduleGenerated}>
-            <Trophy className="h-3.5 w-3.5 hidden sm:block" />
-            {bracketLabel}
-            {isLive && <span className="live-dot ml-1" />}
-          </TabsTrigger>
-        </TabsList>
-        {children}
-      </Tabs>
-    )
+    // TeamGroupKOStage manages its own Teams/Knockout tabs internally — no outer tab wrapper needed
+    return <>{children}</>
   }
 
   // ── Multi-stage Groups → Knockout ────────────────────────────────────────────

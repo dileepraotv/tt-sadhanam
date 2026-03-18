@@ -1112,12 +1112,13 @@ function FixtureDetailPanel({
   // This ensures scoring pages always show real names instead of TBD
   useEffect(() => {
     if (isLocked || autoSavedRef.current) return
+    const aPlayers = teamA?.players ?? []
+    const bPlayers = teamB?.players ?? []
+    // Skip auto-save if NEITHER team has players yet (e.g. KO-only format, players added at match time)
+    if (aPlayers.length === 0 && bPlayers.length === 0) { autoSavedRef.current = true; return }
     const anyUnsaved = match.submatches.some(sm => {
-      const a = teamA?.players ?? []
-      const b = teamB?.players ?? []
       if (sm.team_a_player_id && sm.team_b_player_id) return false // already saved
-      // Check if there are players to auto-assign
-      return a.length > 0 || b.length > 0
+      return aPlayers.length > 0 || bPlayers.length > 0
     })
     if (!anyUnsaved) return
     autoSavedRef.current = true
@@ -1340,7 +1341,9 @@ function FixtureDetailPanel({
                 )}>{idx + 1}</span>
                 <span className="text-xs font-medium text-muted-foreground flex-1">{sm.label}</span>
                 <span className="text-xs text-muted-foreground hidden sm:block">
-                  {sm.player_a_name ?? '?'} <span className="opacity-40">vs</span> {sm.player_b_name ?? '?'}
+                  {sm.player_a_name ?? sm.label.match(/\(([^)]+)\)/)?.[1]?.split(' vs ')?.[0] ?? 'TBD'}
+                  {' '}<span className="opacity-40">vs</span>{' '}
+                  {sm.player_b_name ?? sm.label.match(/\(([^)]+)\)/)?.[1]?.split(' vs ')?.[1] ?? 'TBD'}
                 </span>
                 {isRubberDone ? (
                   <span className="text-xs font-semibold font-mono shrink-0">
@@ -2258,7 +2261,10 @@ export function TeamGroupKOStage({ tournament, matchBase }: {
                || tournament.format_type === 'team_league_swaythling'
 
   type TabKey = 'teams' | 'groups' | 'knockout'
-  const [activeTab, setActiveTab] = useState<TabKey>('teams')
+  // Initialise to 'knockout' if bracket already generated — avoids Teams tab flash on load
+  const [activeTab, setActiveTab] = useState<TabKey>(
+    tournament.bracket_generated ? 'knockout' : 'teams'
+  )
 
   const rrMatches     = teamMatches.filter(m => m.group_id != null)
   const koMatches     = teamMatches.filter(m => m.group_id == null && m.round >= 900)
