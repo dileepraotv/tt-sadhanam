@@ -99,7 +99,7 @@ export function AdminChampTabs({
             <Shield className="h-3.5 w-3.5 hidden sm:block" />
             Teams
           </TabsTrigger>
-          <TabsTrigger value="bracket" className="flex-none gap-1.5" disabled={!teamScheduleGenerated}>
+          <TabsTrigger value="knockout" className="flex-none gap-1.5" disabled={!teamScheduleGenerated}>
             <Trophy className="h-3.5 w-3.5 hidden sm:block" />
             {bracketLabel}
             {isLive && <span className="live-dot ml-1" />}
