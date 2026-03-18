@@ -328,16 +328,15 @@ function useTeamGroupData(tournamentId: string) {
     return true
   }, [tournamentId])
 
-  // ── Full initial load ─────────────────────────────────────────────────────
+  // ── Full load — always reloads teams to pick up new imports/edits ───────
   const loadData = useCallback(async (silent = false) => {
     const gen = ++genRef.current
     if (!silent) setLoading(true)
 
-    // Teams MUST complete before matches — names are read from the ref
-    if (teamNamesRef.current.size === 0) {
-      await loadTeams()
-      if (gen !== genRef.current) return
-    }
+    // Always reload teams — ref may be stale after import/add/edit actions
+    await loadTeams()
+    if (gen !== genRef.current) return
+
     // loadMatches and loadGroups are independent — run in parallel
     await Promise.all([loadMatches(gen), loadGroups(gen)])
     if (gen === genRef.current) setLoading(false)
