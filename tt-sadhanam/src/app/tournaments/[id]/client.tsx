@@ -150,11 +150,10 @@ export function PublicTournamentClient({
         )}
 
         {/* ── Main content — routed by format_type ── */}
-        <div className="surface-card overflow-hidden">
 
-          {/* Single Knockout */}
+          {/* Singles Knockout — in surface-card */}
           {ft === 'single_knockout' && (
-            <div className="p-4 sm:p-6">
+            <div className="surface-card overflow-hidden p-4 sm:p-6">
               <BracketView
                 tournament={tournament}
                 matches={koMatches.length > 0 ? koMatches : matches}
@@ -164,19 +163,21 @@ export function PublicTournamentClient({
             </div>
           )}
 
-          {/* Single Round Robin */}
+          {/* Single Round Robin — in surface-card */}
           {ft === 'single_round_robin' && (
-            <PublicRRView
-              tournament={tournament}
-              groups={rrGroups}
-              standings={rrStandings}
-              rrMatches={rrMatches.length > 0 ? rrMatches : matches}
-              rrStage={rrStage}
-              onMatchClick={handleMatchClick}
-            />
+            <div className="surface-card overflow-hidden">
+              <PublicRRView
+                tournament={tournament}
+                groups={rrGroups}
+                standings={rrStandings}
+                rrMatches={rrMatches.length > 0 ? rrMatches : matches}
+                rrStage={rrStage}
+                onMatchClick={handleMatchClick}
+              />
+            </div>
           )}
 
-          {/* Multi-stage: Groups → Knockout */}
+          {/* Multi-stage — self-contained layout */}
           {ft === 'multi_rr_to_knockout' && (
             <MultiStageView
               tournament={tournament}
@@ -189,7 +190,7 @@ export function PublicTournamentClient({
             />
           )}
 
-          {/* Pure Round Robin */}
+          {/* Pure Round Robin — self-contained */}
           {ft === 'pure_round_robin' && (
             <PublicPureRRView
               tournament={tournament}
@@ -198,7 +199,7 @@ export function PublicTournamentClient({
             />
           )}
 
-          {/* Double Elimination */}
+          {/* Double Elimination — self-contained */}
           {ft === 'double_elimination' && (
             <PublicDEView
               tournament={tournament}
@@ -206,17 +207,16 @@ export function PublicTournamentClient({
             />
           )}
 
-          {/* Team League (RR only) */}
+          {/* Team League — self-contained */}
           {ft === 'team_league' && (
             <PublicTeamLeagueView tournament={tournament} />
           )}
 
-          {/* Team Groups + KO (all bracket-style formats) */}
+          {/* Team Groups + KO — self-contained */}
           {(ft === 'team_group_corbillon' || ft === 'team_group_swaythling' ||
             ft === 'team_league_ko' || ft === 'team_league_swaythling') && (
             <PublicTeamGroupKOView tournament={tournament} />
           )}
-        </div>
 
         {/* ── Connection footer ── */}
         <RealtimeFooter status={connectionStatus} />
@@ -239,7 +239,7 @@ export function PublicTournamentClient({
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="min-h-screen flex flex-col">
       <Header
         user={user as never ?? null}
         adminRedirectPath={adminRedirectPath}

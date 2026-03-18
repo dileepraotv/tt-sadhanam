@@ -1913,28 +1913,15 @@ function KOMatchCard({ match, teams, isCorbillon, tournament, highlightFix, load
         <div className="h-0.5" style={{ background: 'linear-gradient(90deg,#F06321,#F5853F,#F06321)', backgroundSize: '200% 100%' }} />
       )}
 
-      {/* Expanded: sub-match details */}
+      {/* Expanded: sub-match details — compact accordion same as groups tab */}
       {open && (
-        <div className="border-t border-border/50">
-          {/* Column headers */}
-          <div className="hidden sm:grid sm:grid-cols-[7rem_1fr_3rem_1fr_6rem] gap-2 px-4 pt-3 pb-1.5 items-center bg-muted/20">
-            <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">Match</span>
-            <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: match.team_a_color }}>
-              {match.team_a_name || 'Team A'}
-            </span>
-            <span />
-            <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: match.team_b_color }}>
-              {match.team_b_name || 'Team B'}
-            </span>
-            <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide text-right">Score</span>
-          </div>
+        <div className="border-t border-border/50 px-4 py-1">
           <FixtureDetailPanel
             match={match}
             teams={teams}
             isCorbillon={isCorbillon}
             tournament={tournament}
             loadData={() => loadData(true)}
-            showColumnLayout
           />
         </div>
       )}

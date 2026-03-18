@@ -77,7 +77,7 @@ export function PublicMultiStageClient({
   const koLive = koMatches.some(m => m.status === 'live')
 
   return (
-    <main className="page-shell"><div className="page-content">
+    <div className="page-content">
       {/* Stage status banner */}
       {stage1Complete && !hasKO && (
         <div className="mb-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 flex items-center gap-3">
@@ -145,7 +145,7 @@ export function PublicMultiStageClient({
           />
         </div>
       )}
-    </div></main>
+    </div>
   )
 }
 
