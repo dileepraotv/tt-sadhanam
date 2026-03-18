@@ -746,10 +746,10 @@ function TeamsTab({ tournament, teams, teamMatches, stage, loadData, isPending, 
           description={isKOOnly
             ? 'Bracket is ready. Go to the Knockout tab to score matches.'
             : 'Group fixtures are locked. Go to the Groups tab to view standings.'} />
-      ) : missingPlayers.length > 0 ? (
+      ) : (!isKOOnly && missingPlayers.length > 0) ? (
         <NextStepBanner variant="warning"
           title={`${missingPlayers.length} team${missingPlayers.length !== 1 ? 's' : ''} need${missingPlayers.length === 1 ? 's' : ''} ${playerCount} players`}
-          description={isKOOnly ? 'Assign all players before generating the bracket.' : 'Assign all players before configuring groups.'} />
+          description="Assign all players before configuring groups." />
       ) : isKOOnly ? (
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex-1 min-w-0">
@@ -821,7 +821,7 @@ function TeamsTab({ tournament, teams, teamMatches, stage, loadData, isPending, 
       )}
 
       {/* ── Add form ── */}
-      {showAdd && !hasFixtures && (
+      {showAdd && (!hasFixtures && !koExists) && (
         <Card>
           <CardHeader><CardTitle className="text-base">New Team</CardTitle></CardHeader>
           <CardContent>
@@ -878,7 +878,7 @@ function TeamsTab({ tournament, teams, teamMatches, stage, loadData, isPending, 
                         {team.seed != null && (
                           <span className="text-[10px] font-mono bg-muted px-1.5 py-0.5 rounded text-muted-foreground">S{team.seed}</span>
                         )}
-                        {team.players.length < playerCount && (
+                        {!isKOOnly && team.players.length < playerCount && (
                           <span className="text-[10px] font-semibold text-amber-600 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded">
                             {team.players.length}/{playerCount} players
                           </span>
@@ -895,7 +895,7 @@ function TeamsTab({ tournament, teams, teamMatches, stage, loadData, isPending, 
                         }
                       </div>
                     </div>
-                    {!hasFixtures && (
+                    {(!hasFixtures && !koExists) && (
                       <div className="flex items-center gap-1 shrink-0">
                         <button
                           onClick={() => { setEditingId(team.id); setShowAdd(false) }}
