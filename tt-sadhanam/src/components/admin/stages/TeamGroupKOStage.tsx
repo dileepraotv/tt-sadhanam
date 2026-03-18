@@ -1965,12 +1965,17 @@ function KnockoutTab({ tournament, teams, koMatches, matchBase, loadData, isCorb
   const searchParams = useSearchParams()
   const highlightFix: string = searchParams.get('fix') ?? ''
 
+  const isKOOnly = tournament.format_type === 'team_league_ko'
+               || tournament.format_type === 'team_league_swaythling'
+
   if (koMatches.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
         <Lock className="h-8 w-8 text-muted-foreground/30" />
         <p className="text-muted-foreground text-sm">
-          KO bracket not yet generated. Complete all group matches first.
+          {isKOOnly
+            ? 'KO bracket not yet generated. Go to the Teams tab and generate the bracket.'
+            : 'KO bracket not yet generated. Complete all group matches first.'}
         </p>
       </div>
     )
@@ -2275,21 +2280,23 @@ export function TeamGroupKOStage({ tournament, matchBase }: {
   ]
 
   // KO-only generate handler — bypasses group stage
-  const handleGenerateKODirect = () => {
+  // NOTE: must NOT use startTransition here — React batches state inside transitions
+  // which causes KnockoutTab to render before teamMatches state has updated.
+  const handleGenerateKODirect = async () => {
     setLoading(true)
-    startTransition(async () => {
-      const res = isCorbillon
-        ? await generateTeamKOBracket(tournament.id)
-        : await generateTeamSwaythlingBracket(tournament.id)
-      setLoading(false)
-      if (res.error) {
-        toast({ title: 'Generation failed', description: res.error, variant: 'destructive' })
-      } else {
-        await loadData(); router.refresh()
-        toast({ title: '✅ Bracket generated', variant: 'success' })
-        setActiveTab('knockout')
-      }
-    })
+    const res = isCorbillon
+      ? await generateTeamKOBracket(tournament.id)
+      : await generateTeamSwaythlingBracket(tournament.id)
+    setLoading(false)
+    if (res.error) {
+      toast({ title: 'Generation failed', description: res.error, variant: 'destructive' })
+      return
+    }
+    // Load fresh data FIRST, then switch tabs so KnockoutTab sees populated koMatches
+    await loadData()
+    router.refresh()
+    toast({ title: '✅ Bracket generated', variant: 'success' })
+    setActiveTab('knockout')
   }
 
   return (
