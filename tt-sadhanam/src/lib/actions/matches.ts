@@ -558,6 +558,9 @@ export async function updateMatchFormat(
 export async function bulkSaveGameScores(
   matchId: string,
   entries: Array<{ gameNumber: number; score1: number; score2: number }>,
+  /** When true, clears all existing game rows before saving (edit of a completed match).
+   *  The clear happens server-side AFTER validation so data is never lost on a bad save. */
+  clearExistingFirst = false,
 ): Promise<{ success: true } | { success: false; error: string }> {
   if (!entries.length) return { success: true }
 
@@ -587,7 +590,8 @@ export async function bulkSaveGameScores(
     return { success: false, error: 'Both players must be assigned before entering scores.' }
   }
 
-  // ── 2. Validate all scores up-front ─────────────────────────────────────
+  // ── 2. Validate ALL scores FIRST — before any DB mutations ──────────────
+  // This guarantees we never delete old data and then fail to write new data.
   for (const { gameNumber, score1, score2 } of entries) {
     const vr = validateGameScore({ score1, score2 })
     if (!vr.ok) {
@@ -595,8 +599,25 @@ export async function bulkSaveGameScores(
     }
   }
 
-  // ── 3. Upsert all game rows ──────────────────────────────────────────────
-  // Build game rows with winner_ids
+  // ── 3. If editing a completed match: reset atomically on the server ──────
+  // Only after validation passes do we clear old data.
+  if (clearExistingFirst && existingGames.length > 0) {
+    const { error: delErr } = await supabase
+      .from('games')
+      .delete()
+      .eq('match_id', matchId)
+    if (delErr) return { success: false, error: `Could not reset match: ${delErr.message}` }
+
+    const { error: resetErr } = await supabase
+      .from('matches')
+      .update({ status: 'pending', winner_id: null, player1_games: 0, player2_games: 0, completed_at: null })
+      .eq('id', matchId)
+    if (resetErr) return { success: false, error: `Could not reset match status: ${resetErr.message}` }
+
+    existingGames = [] // cleared
+  }
+
+  // ── 4. Upsert all game rows ──────────────────────────────────────────────
   const gameRows = entries.map(({ gameNumber, score1, score2 }) => {
     const gameWinnerId = isTeamSubmatch ? null : deriveGameWinnerId(score1, score2, p1, p2)
     return { match_id: matchId, game_number: gameNumber, score1, score2, winner_id: gameWinnerId }
@@ -607,14 +628,14 @@ export async function bulkSaveGameScores(
     .upsert(gameRows, { onConflict: 'match_id,game_number' })
   if (upsertErr) return { success: false, error: upsertErr.message }
 
-  // ── 4. Build final game list in memory ───────────────────────────────────
+  // ── 5. Build final game list in memory ───────────────────────────────────
   const upsertedByNum = new Map(gameRows.map(g => [g.game_number, g]))
   const allGames: Game[] = [
     ...existingGames.filter(g => !upsertedByNum.has(g.game_number)),
     ...gameRows.map(g => ({ ...g } as unknown as Game)),
   ].sort((a, b) => a.game_number - b.game_number)
 
-  // ── 5. Compute final match state ─────────────────────────────────────────
+  // ── 6. Compute final match state ─────────────────────────────────────────
   const matchState = computeMatchState(allGames, format, p1, p2)
   const matchWinnerId: string | null = isTeamSubmatch
     ? null
@@ -626,7 +647,7 @@ export async function bulkSaveGameScores(
     : !!matchWinnerId
   const newStatus = isMatchComplete ? 'complete' : (allGames.length > 0 ? 'live' : 'pending')
 
-  // ── 6. Update match row ──────────────────────────────────────────────────
+  // ── 7. Update match row ──────────────────────────────────────────────────
   const { error: matchUpdateErr } = await supabase
     .from('matches')
     .update({
@@ -640,13 +661,13 @@ export async function bulkSaveGameScores(
     .eq('id', matchId)
   if (matchUpdateErr) return { success: false, error: matchUpdateErr.message }
 
-  // ── 7. Team submatch: update parent team_match scores ──────────────────
+  // ── 8. Team submatch: update parent team_match scores ──────────────────
   if (isTeamSubmatch && isMatchComplete) {
     const { updateSubmatchResult } = await import('./teamLeague')
     await updateSubmatchResult(matchId, match.tournament_id)
   }
 
-  // ── 8. Propagate winner to next match (KO brackets only) ────────────────
+  // ── 9. Propagate winner to next match (KO brackets only) ────────────────
   if (matchWinnerId && match.next_match_id) {
     const col = match.next_slot === 1 ? 'player1_id' : 'player2_id'
     const { error: propErr } = await supabase
@@ -654,7 +675,7 @@ export async function bulkSaveGameScores(
     if (propErr) return { success: false, error: `Match saved but bracket advance failed: ${propErr.message}` }
   }
 
-  // ── 9. DE: route loser to Losers Bracket ─────────────────────────────────
+  // ── 10. DE: route loser to Losers Bracket ────────────────────────────────
   const bracketSide = (match as unknown as { bracket_side?: string | null }).bracket_side
   const loserNextMatchId = (match as unknown as { loser_next_match_id?: string | null }).loser_next_match_id
   const loserNextSlot = (match as unknown as { loser_next_slot?: number | null }).loser_next_slot
@@ -666,7 +687,7 @@ export async function bulkSaveGameScores(
     }
   }
 
-  // ── 10. Grand Final / KO Final completion ────────────────────────────────
+  // ── 11. Grand Final / KO Final completion ─────────────────────────────────
   if (isMatchComplete && bracketSide === 'grand_final' && matchWinnerId) {
     const { advanceDEPlayers } = await import('./doubleElimination')
     await advanceDEPlayers(matchId, match.tournament_id)
@@ -674,13 +695,13 @@ export async function bulkSaveGameScores(
     await supabase.from('tournaments').update({ status: 'complete' }).eq('id', match.tournament_id)
   }
 
-  // ── 11. Audit log (fire and forget) ──────────────────────────────────────
+  // ── 12. Audit log (fire and forget) ───────────────────────────────────────
   void supabase.auth.getUser().then(({ data }: { data: { user: { id: string } | null } }) => {
     const user = data.user
     if (user) {
       void supabase.from('audit_log').insert({
         actor_id:   user.id,
-        action:     'bulk_save_game_scores',
+        action:     clearExistingFirst ? 'edit_bulk_game_scores' : 'bulk_save_game_scores',
         table_name: 'games',
         record_id:  matchId,
         new_data:   { games_saved: entries.length, match_status: newStatus, match_winner: matchWinnerId },
@@ -688,7 +709,7 @@ export async function bulkSaveGameScores(
     }
   })
 
-  // ── 12. Revalidate ────────────────────────────────────────────────────────
+  // ── 13. Revalidate ─────────────────────────────────────────────────────────
   const champId = (match.tournament as unknown as { championship_id: string | null }).championship_id
   revalidateMatchPaths(match.tournament_id, matchId, champId)
 

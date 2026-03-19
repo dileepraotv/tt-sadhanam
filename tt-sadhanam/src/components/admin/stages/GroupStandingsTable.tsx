@@ -472,28 +472,36 @@ function InlineMatchScorer({ matchId, player1Name, player2Name }: {
 
   const maxG = format === 'bo3' ? 3 : format === 'bo7' ? 7 : 5
 
-  // Shared score validation helper
+  // Score validation helper — wraps the canonical engine
   const validateScore = (s1: number, s2: number): string | null => {
     const result = validateGameScore({ score1: s1, score2: s2 })
     return result.ok ? null : formatValidationErrors(result)
   }
 
-  // Update score for a given game+side and run validation when both sides filled
+  // Update score for a given game+side and run validation when both sides filled.
+  // IMPORTANT: setScoreErrors is called as a sibling update, NOT inside setLocal's
+  // updater function. Calling one state setter inside another's updater is a React
+  // anti-pattern that causes the error state to be silently discarded in React 18.
   const handleScoreChange = (gn: number, side: 's1' | 's2', val: string) => {
-    setLocal(prev => {
-      const updated = { ...prev, [gn]: { ...prev[gn] ?? { s1: '', s2: '' }, [side]: val } }
-      const row = updated[gn]
-      if (row.s1 !== '' && row.s2 !== '') {
-        const v1 = parseInt(row.s1, 10), v2 = parseInt(row.s2, 10)
-        if (!isNaN(v1) && !isNaN(v2)) {
-          const err = validateScore(v1, v2)
-          setScoreErrors(p => ({ ...p, [gn]: err ?? '' }))
-        }
-      } else {
-        setScoreErrors(p => { const n = { ...p }; delete n[gn]; return n })
+    // Read current local synchronously from the closure — safe because this is
+    // an event handler (not a render-phase call).
+    const currentRow = local[gn] ?? { s1: '', s2: '' }
+    const newRow = { ...currentRow, [side]: val }
+    setLocal(prev => ({ ...prev, [gn]: newRow }))
+
+    // Validate whenever both inputs have values
+    if (newRow.s1 !== '' && newRow.s2 !== '') {
+      const v1 = parseInt(newRow.s1, 10)
+      const v2 = parseInt(newRow.s2, 10)
+      if (!isNaN(v1) && !isNaN(v2)) {
+        const err = validateScore(v1, v2)
+        // err === null means valid → store '' so filter(Boolean) hides it
+        setScoreErrors(prev => ({ ...prev, [gn]: err ?? '' }))
       }
-      return updated
-    })
+    } else {
+      // One side cleared — remove the error for this game
+      setScoreErrors(prev => { const n = { ...prev }; delete n[gn]; return n })
+    }
   }
 
   const handleSave = async () => {
@@ -504,27 +512,34 @@ function InlineMatchScorer({ matchId, player1Name, player2Name }: {
       .filter(({ sc }) => sc && !(sc.s1 === '' && sc.s2 === ''))
     if (!entries.length) { setSaving(false); return }
 
-    // Validate all scores before touching the DB
+    // Client-side validation gate — prevents reaching the server with bad data
+    // and gives the user immediate feedback via saveError + red borders.
     for (const { gn, sc } of entries) {
-      const s1 = parseInt(sc!.s1, 10), s2 = parseInt(sc!.s2, 10)
-      if (isNaN(s1) || isNaN(s2)) { setSaveError(`Game ${gn}: enter valid numbers`); setSaving(false); return }
+      const s1 = parseInt(sc!.s1, 10)
+      const s2 = parseInt(sc!.s2, 10)
+      if (isNaN(s1) || isNaN(s2)) {
+        setSaveError(`Game ${gn}: enter valid numbers`)
+        // Also set the per-game error so the red border shows
+        setScoreErrors(prev => ({ ...prev, [gn]: 'Enter valid numbers' }))
+        setSaving(false)
+        return
+      }
       const err = validateScore(s1, s2)
-      if (err) { setSaveError(`Game ${gn}: ${err}`); setSaving(false); return }
+      if (err) {
+        setSaveError(`Game ${gn}: ${err}`)
+        setScoreErrors(prev => ({ ...prev, [gn]: err }))
+        setSaving(false)
+        return
+      }
     }
 
-    // Only reset if the match is already marked complete (not just because games exist)
-    if (matchStatus === 'complete') {
-      const { deleteGameScore: del } = await import('@/lib/actions/matches')
-      for (const g of games) await del(matchId, g.game_number)
-      const { createClient: cc } = await import('@/lib/supabase/client')
-      await cc().from('matches').update({ status: 'pending', winner_id: null, player1_games: 0, player2_games: 0, completed_at: null }).eq('id', matchId)
-    }
-
-    // Bulk save — single round-trip to DB regardless of game count
+    // Pass clearExistingFirst=true when editing a completed match.
+    // The server action validates BEFORE deleting, so old data is safe if anything fails.
     const { bulkSaveGameScores } = await import('@/lib/actions/matches')
     const res = await bulkSaveGameScores(
       matchId,
       entries.map(({ gn, sc }) => ({ gameNumber: gn, score1: parseInt(sc!.s1, 10), score2: parseInt(sc!.s2, 10) })),
+      matchStatus === 'complete', // clearExistingFirst
     )
     if (!res.success) {
       setSaveError(res.error)
@@ -533,7 +548,7 @@ function InlineMatchScorer({ matchId, player1Name, player2Name }: {
     }
 
     setSaving(false)
-    // Reload local game state AND trigger server re-render for updated standings
+    // Reload local state + trigger server re-render so standings update immediately
     await load()
     router.refresh()
   }
