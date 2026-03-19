@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { Upload, FileSpreadsheet, AlertCircle, CheckCircle2, X, ChevronDown, ChevronUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -207,6 +208,7 @@ export function ExcelUpload({ tournamentId, existingPlayers, onComplete }: Props
   const [dragging,     setDragging]     = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const { setLoading }               = useLoading()
+  const router = useRouter()
 
   const existingNames = new Set(existingPlayers.map(p => p.name.toLowerCase()))
 
@@ -262,6 +264,7 @@ export function ExcelUpload({ tournamentId, existingPlayers, onComplete }: Props
         })
         const count = parsed?.length ?? 0
         setParsed(null); setFileName(''); onComplete(count)
+        router.refresh()
       }
     })
   }

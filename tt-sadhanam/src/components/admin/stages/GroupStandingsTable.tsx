@@ -10,6 +10,7 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { AlertTriangle } from 'lucide-react'
 import { validateGameScore, formatValidationErrors } from '@/lib/scoring/engine'
 import Link from 'next/link'
@@ -423,38 +424,47 @@ function FixtureRow({ match: m, matchBase, isAdmin }: {
 
 // ── InlineMatchScorer ──────────────────────────────────────────────────────────
 // Minimal inline game-score entry for single-player (singles) matches in RR groups.
-// Uses the same saveGameScore / declareMatchWinner actions as all other scorers.
+// Fixes applied:
+//   1. Score validation on BOTH P1 and P2 inputs (was missing on P1)
+//   2. Uses bulkSaveGameScores (single DB round-trip) instead of sequential saves
+//   3. Calls router.refresh() after save so standings update without navigation
+//   4. Only resets match state when the match is actually complete (was always resetting)
 
 function InlineMatchScorer({ matchId, player1Name, player2Name }: {
   matchId:     string
   player1Name: string
   player2Name: string
 }) {
-  const [games,       setGames]    = useState<{id:string;game_number:number;score1:number;score2:number}[]>([])
+  const router = useRouter()
+  const [games,       setGames]    = useState<{id:string;game_number:number;score1:number;score2:number;winner_id:string|null}[]>([])
   const [local,       setLocal]    = useState<Record<number,{s1:string;s2:string}>>({})
   const [saving,      setSaving]   = useState(false)
   const [loading,     setLoading_] = useState(true)
   const [format,      setFormat]   = useState<'bo3'|'bo5'|'bo7'>('bo5')
+  const [matchStatus, setMatchStatus] = useState<string>('pending')
   const [p1Id,        setP1Id]     = useState<string | null>(null)
   const [p2Id,        setP2Id]     = useState<string | null>(null)
-  const [scoreErrors,  setScoreErrors] = useState<Record<number, string>>({})
-  const [saveError,    setSaveError]   = useState<string | null>(null)
+  const [scoreErrors, setScoreErrors] = useState<Record<number, string>>({})
+  const [saveError,   setSaveError]   = useState<string | null>(null)
   const sb = useRef(createClientForScorer()).current
 
   const load = useCallback(async () => {
     setLoading_(true)
     const [gRes, mRes] = await Promise.all([
       sb.from('games').select('*').eq('match_id', matchId).order('game_number'),
-      sb.from('matches').select('match_format, player1_id, player2_id').eq('id', matchId).single(),
+      sb.from('matches').select('match_format, player1_id, player2_id, status').eq('id', matchId).single(),
     ])
     const gs = gRes.data ?? []
     setGames(gs)
     const init: Record<number,{s1:string;s2:string}> = {}
     for (const g of gs) init[g.game_number] = { s1: String(g.score1 ?? ''), s2: String(g.score2 ?? '') }
     setLocal(init)
+    setScoreErrors({})
+    setSaveError(null)
     if (mRes.data?.match_format) setFormat(mRes.data.match_format as 'bo3'|'bo5'|'bo7')
     if (mRes.data?.player1_id)   setP1Id(mRes.data.player1_id)
     if (mRes.data?.player2_id)   setP2Id(mRes.data.player2_id)
+    if (mRes.data?.status)       setMatchStatus(mRes.data.status)
     setLoading_(false)
   }, [matchId])
 
@@ -462,42 +472,70 @@ function InlineMatchScorer({ matchId, player1Name, player2Name }: {
 
   const maxG = format === 'bo3' ? 3 : format === 'bo7' ? 7 : 5
 
+  // Shared score validation helper
   const validateScore = (s1: number, s2: number): string | null => {
     const result = validateGameScore({ score1: s1, score2: s2 })
     return result.ok ? null : formatValidationErrors(result)
   }
 
+  // Update score for a given game+side and run validation when both sides filled
+  const handleScoreChange = (gn: number, side: 's1' | 's2', val: string) => {
+    setLocal(prev => {
+      const updated = { ...prev, [gn]: { ...prev[gn] ?? { s1: '', s2: '' }, [side]: val } }
+      const row = updated[gn]
+      if (row.s1 !== '' && row.s2 !== '') {
+        const v1 = parseInt(row.s1, 10), v2 = parseInt(row.s2, 10)
+        if (!isNaN(v1) && !isNaN(v2)) {
+          const err = validateScore(v1, v2)
+          setScoreErrors(p => ({ ...p, [gn]: err ?? '' }))
+        }
+      } else {
+        setScoreErrors(p => { const n = { ...p }; delete n[gn]; return n })
+      }
+      return updated
+    })
+  }
+
   const handleSave = async () => {
     setSaveError(null)
     setSaving(true)
-    const entries = Array.from({length:maxG},(_,i)=>i+1)
-      .map(gn=>({gn,sc:local[gn]}))
-      .filter(({sc})=>sc&&!(sc.s1===''&&sc.s2===''))
+    const entries = Array.from({ length: maxG }, (_, i) => i + 1)
+      .map(gn => ({ gn, sc: local[gn] }))
+      .filter(({ sc }) => sc && !(sc.s1 === '' && sc.s2 === ''))
     if (!entries.length) { setSaving(false); return }
-    // Validate all scores before saving
-    for (const {gn, sc} of entries) {
+
+    // Validate all scores before touching the DB
+    for (const { gn, sc } of entries) {
       const s1 = parseInt(sc!.s1, 10), s2 = parseInt(sc!.s2, 10)
       if (isNaN(s1) || isNaN(s2)) { setSaveError(`Game ${gn}: enter valid numbers`); setSaving(false); return }
       const err = validateScore(s1, s2)
       if (err) { setSaveError(`Game ${gn}: ${err}`); setSaving(false); return }
     }
-    // Reset if match was already complete
-    const isWasComplete = games.length > 0
-    if (isWasComplete) {
+
+    // Only reset if the match is already marked complete (not just because games exist)
+    if (matchStatus === 'complete') {
       const { deleteGameScore: del } = await import('@/lib/actions/matches')
       for (const g of games) await del(matchId, g.game_number)
       const { createClient: cc } = await import('@/lib/supabase/client')
-      await cc().from('matches').update({status:'pending',winner_id:null,player1_games:0,player2_games:0,completed_at:null}).eq('id',matchId)
+      await cc().from('matches').update({ status: 'pending', winner_id: null, player1_games: 0, player2_games: 0, completed_at: null }).eq('id', matchId)
     }
-    const { saveGameScore } = await import('@/lib/actions/matches')
-    for (const {gn,sc} of entries) {
-      const s1=parseInt(sc!.s1,10), s2=parseInt(sc!.s2,10)
-      if(isNaN(s1)||isNaN(s2)) continue
-      const res = await saveGameScore(matchId,gn,s1,s2)
-      if(!res.success) { if(res.error?.includes('Cannot add')||res.error?.includes('already complete')) break }
+
+    // Bulk save — single round-trip to DB regardless of game count
+    const { bulkSaveGameScores } = await import('@/lib/actions/matches')
+    const res = await bulkSaveGameScores(
+      matchId,
+      entries.map(({ gn, sc }) => ({ gameNumber: gn, score1: parseInt(sc!.s1, 10), score2: parseInt(sc!.s2, 10) })),
+    )
+    if (!res.success) {
+      setSaveError(res.error)
+      setSaving(false)
+      return
     }
+
     setSaving(false)
+    // Reload local game state AND trigger server re-render for updated standings
     await load()
+    router.refresh()
   }
 
   if (loading) return <div className="text-xs text-muted-foreground py-2">Loading…</div>
@@ -508,64 +546,73 @@ function InlineMatchScorer({ matchId, player1Name, player2Name }: {
       {/* Format pills */}
       <div className="flex items-center gap-1">
         {(['bo3','bo5','bo7'] as const).map(f => (
-          <button key={f} onClick={async()=>{setFormat(f);const{updateMatchFormat}=await import('@/lib/actions/matches');await updateMatchFormat(matchId,f)}}
+          <button key={f} onClick={async () => { setFormat(f); const { updateMatchFormat } = await import('@/lib/actions/matches'); await updateMatchFormat(matchId, f) }}
             className={cn('px-2.5 py-0.5 rounded-full text-[11px] font-bold transition-colors',
-              format===f ? 'bg-orange-500 text-white' : 'text-muted-foreground hover:text-foreground')}>
-            {f==='bo3'?'Best of 3':f==='bo5'?'Best of 5':'Best of 7'}
+              format === f ? 'bg-orange-500 text-white' : 'text-muted-foreground hover:text-foreground')}>
+            {f === 'bo3' ? 'Best of 3' : f === 'bo5' ? 'Best of 5' : 'Best of 7'}
           </button>
         ))}
       </div>
+
       {/* Score grid */}
-      <div className="grid gap-1" style={{gridTemplateColumns:`minmax(80px,1fr) repeat(${maxG},44px)`}}>
+      <div className="grid gap-1" style={{ gridTemplateColumns: `minmax(80px,1fr) repeat(${maxG},44px)` }}>
         <div className="text-[10px] font-bold text-muted-foreground uppercase py-1">Player</div>
-        {Array.from({length:maxG},(_,i)=>(
-          <div key={i} className="text-[10px] text-center font-mono text-muted-foreground py-1 font-bold">G{i+1}</div>
+        {Array.from({ length: maxG }, (_, i) => (
+          <div key={i} className="text-[10px] text-center font-mono text-muted-foreground py-1 font-bold">G{i + 1}</div>
         ))}
-        {/* P1 */}
+
+        {/* P1 row — validation mirrors P2 */}
         <div className="text-xs font-semibold py-1 truncate self-center">{player1Name}</div>
-        {Array.from({length:maxG},(_,i)=>{
-          const gn=i+1, stored=games.find(g=>g.game_number===gn)
-          const aWon=stored?stored.score1>stored.score2:false
+        {Array.from({ length: maxG }, (_, i) => {
+          const gn = i + 1
+          const stored = games.find(g => g.game_number === gn)
+          const hasError = !!scoreErrors[gn]
+          const aWon = stored ? stored.score1 > stored.score2 : false
           return (
             <input key={gn} type="number" min={0} max={99}
-              value={local[gn]?.s1??''}
-              onChange={e=>setLocal(p=>({...p,[gn]:{...p[gn]??{s1:'',s2:''},s1:e.target.value}}))}
+              value={local[gn]?.s1 ?? ''}
+              onChange={e => handleScoreChange(gn, 's1', e.target.value)}
               className={cn('w-full text-center text-sm font-bold py-1.5 rounded-lg border focus:outline-none focus:ring-2 focus:ring-orange-500/40 [appearance:textfield]',
-                aWon&&stored?'border-emerald-400/50 bg-emerald-50/60 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300':'border-border bg-background')}
+                hasError ? 'border-red-400 bg-red-50/40 dark:bg-red-950/20' :
+                aWon && stored ? 'border-emerald-400/50 bg-emerald-50/60 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300' :
+                'border-border bg-background')}
             />
           )
         })}
-        {/* P2 */}
+
+        {/* P2 row */}
         <div className="text-xs font-semibold py-1 truncate self-center">{player2Name}</div>
-        {Array.from({length:maxG},(_,i)=>{
-          const gn=i+1, stored=games.find(g=>g.game_number===gn)
-          const bWon=stored?stored.score2>stored.score1:false
+        {Array.from({ length: maxG }, (_, i) => {
+          const gn = i + 1
+          const stored = games.find(g => g.game_number === gn)
+          const hasError = !!scoreErrors[gn]
+          const bWon = stored ? stored.score2 > stored.score1 : false
           return (
             <input key={gn} type="number" min={0} max={99}
-              value={local[gn]?.s2??''}
-              onChange={e=>{
-                const ns2=e.target.value
-                const upd={...local[gn]??{s1:'',s2:''},s2:ns2}
-                setLocal(p=>({...p,[gn]:upd}))
-                if(upd.s1!==''&&ns2!==''){const v1=parseInt(upd.s1,10),v2=parseInt(ns2,10);if(!isNaN(v1)&&!isNaN(v2))setScoreErrors(p=>({...p,[gn]:validateScore(v1,v2)??''}))}
-                else setScoreErrors(p=>{const n={...p};delete n[gn];return n})
-              }}
+              value={local[gn]?.s2 ?? ''}
+              onChange={e => handleScoreChange(gn, 's2', e.target.value)}
               className={cn('w-full text-center text-sm font-bold py-1.5 rounded-lg border focus:outline-none focus:ring-2 focus:ring-orange-500/40 [appearance:textfield]',
-                scoreErrors[gn]?'border-red-400 bg-red-50/40 dark:bg-red-950/20':bWon&&stored?'border-emerald-400/50 bg-emerald-50/60 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300':'border-border bg-background')}
+                hasError ? 'border-red-400 bg-red-50/40 dark:bg-red-950/20' :
+                bWon && stored ? 'border-emerald-400/50 bg-emerald-50/60 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300' :
+                'border-border bg-background')}
             />
           )
         })}
       </div>
-      {Object.entries(scoreErrors).filter(([,e])=>e).map(([gn,err])=>(
+
+      {/* Per-game validation errors */}
+      {Object.entries(scoreErrors).filter(([, e]) => e).map(([gn, err]) => (
         <p key={gn} className="text-xs text-red-600 dark:text-red-400 font-medium flex items-center gap-1 mt-0.5">
-          <AlertTriangle className="h-3 w-3 shrink-0"/> Game {gn}: {err}
+          <AlertTriangle className="h-3 w-3 shrink-0" /> Game {gn}: {err}
         </p>
       ))}
       {saveError && (
         <p className="text-xs text-red-600 dark:text-red-400 font-medium flex items-center gap-1 mt-0.5">
-          <AlertTriangle className="h-3 w-3 shrink-0"/> {saveError}
+          <AlertTriangle className="h-3 w-3 shrink-0" /> {saveError}
         </p>
       )}
+
+      {/* Action buttons */}
       <div className="flex items-center gap-2 flex-wrap">
         <button onClick={handleSave} disabled={saving}
           className="px-4 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold transition-colors disabled:opacity-50 flex items-center gap-1.5">
@@ -577,6 +624,7 @@ function InlineMatchScorer({ matchId, player1Name, player2Name }: {
           await declareMatchWinner(matchId, p1Id!, 'declared')
           setSaving(false)
           await load()
+          router.refresh()
         }} className="px-3 py-1.5 rounded-lg border border-border text-xs font-semibold text-muted-foreground hover:border-amber-400 hover:text-foreground transition-colors disabled:opacity-30 flex items-center gap-1">
           🏆 {player1Name} wins
         </button>
@@ -586,6 +634,7 @@ function InlineMatchScorer({ matchId, player1Name, player2Name }: {
           await declareMatchWinner(matchId, p2Id!, 'declared')
           setSaving(false)
           await load()
+          router.refresh()
         }} className="px-3 py-1.5 rounded-lg border border-border text-xs font-semibold text-muted-foreground hover:border-amber-400 hover:text-foreground transition-colors disabled:opacity-30 flex items-center gap-1">
           🏆 {player2Name} wins
         </button>

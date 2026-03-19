@@ -92,6 +92,7 @@ export function PlayerManager({ tournament, players }: PlayerManagerProps) {
       } else {
         setName(''); setClub(''); setSeed(''); setGroup(''); setNameError('')
         toast({ title: 'Player added', description: trimmed })
+        router.refresh()
       }
     })
   }
@@ -108,6 +109,7 @@ export function PlayerManager({ tournament, players }: PlayerManagerProps) {
       } else {
         setBulkText('')
         toast({ title: `${result.count} player${result.count !== 1 ? 's' : ''} added` })
+        router.refresh()
       }
     })
   }
@@ -122,6 +124,7 @@ export function PlayerManager({ tournament, players }: PlayerManagerProps) {
         toast({ title: 'Delete failed', description: result.error, variant: 'destructive' })
       } else {
         toast({ title: 'Player removed', description: p.name })
+        router.refresh()
       }
     })
   }
@@ -136,6 +139,7 @@ export function PlayerManager({ tournament, players }: PlayerManagerProps) {
       const result = await updatePlayerSeed(tournament.id, playerId, s)
       setLoading(false)
       if (result.error) toast({ title: 'Seed error', description: result.error, variant: 'destructive' })
+      else router.refresh()
     })
   }
 
@@ -156,6 +160,7 @@ export function PlayerManager({ tournament, players }: PlayerManagerProps) {
       } else {
         setEditingId(null)
         toast({ title: 'Player updated' })
+        router.refresh()
       }
     })
   }
@@ -171,6 +176,7 @@ export function PlayerManager({ tournament, players }: PlayerManagerProps) {
         toast({ title: 'Could not delete players', description: result.error, variant: 'destructive' })
       } else {
         toast({ title: `Cleared ${result.count} player${result.count !== 1 ? 's' : ''}` })
+        router.refresh()
       }
     })
   }

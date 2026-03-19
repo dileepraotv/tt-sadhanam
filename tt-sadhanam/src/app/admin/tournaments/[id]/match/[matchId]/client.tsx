@@ -19,7 +19,7 @@ import type { MatchFormat } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, Badge } from '@/components/ui/index'
 import { LiveBadge } from '@/components/shared/LiveBadge'
-import { saveGameScore, deleteGameScore, declareMatchWinner, updateMatchFormat } from '@/lib/actions/matches'
+import { saveGameScore, bulkSaveGameScores, deleteGameScore, declareMatchWinner, updateMatchFormat } from '@/lib/actions/matches'
 import { toast } from '@/components/ui/toaster'
 import { cn } from '@/lib/utils'
 import {
@@ -176,27 +176,31 @@ export function MatchScoringClient({ initialMatch, initialGames, tournament, bac
       toast({ title: 'No scores to save', description: 'Enter at least one game score.' })
       return
     }
+    // Optimistic update — show scores immediately in the UI
+    for (const { gameNum, s1, s2 } of toSave) {
+      setGames(prev => {
+        const fake: Game = {
+          id: `optimistic-${gameNum}`, match_id: match.id, game_number: gameNum,
+          score1: s1, score2: s2,
+          winner_id: s1 > s2 ? (match.player1_id ?? '') : (match.player2_id ?? ''),
+          created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+        }
+        const ex = prev.find(g => g.game_number === gameNum)
+        return ex ? prev.map(g => g.game_number === gameNum ? { ...g, ...fake } : g) : [...prev, fake].sort((a, b) => a.game_number - b.game_number)
+      })
+    }
     setLoading(true)
     startTransition(async () => {
-      for (const { gameNum, s1, s2 } of toSave) {
-        const res = await saveGameScore(match.id, gameNum, s1, s2)
-        if (!res.success) {
-          setLoading(false)
-          toast({ title: `Game ${gameNum} failed`, description: res.error, variant: 'destructive' })
-          return
-        }
-        setGames(prev => {
-          const fake: Game = {
-            id: `optimistic-${gameNum}`, match_id: match.id, game_number: gameNum,
-            score1: s1, score2: s2,
-            winner_id: s1 > s2 ? (match.player1_id ?? '') : (match.player2_id ?? ''),
-            created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-          }
-          const ex = prev.find(g => g.game_number === gameNum)
-          return ex ? prev.map(g => g.game_number === gameNum ? { ...g, ...fake } : g) : [...prev, fake].sort((a, b) => a.game_number - b.game_number)
-        })
-      }
+      // Single bulk call — 4 DB round-trips regardless of number of games
+      const res = await bulkSaveGameScores(
+        match.id,
+        toSave.map(({ gameNum, s1, s2 }) => ({ gameNumber: gameNum, score1: s1, score2: s2 })),
+      )
       setLoading(false)
+      if (!res.success) {
+        toast({ title: 'Save failed', description: res.error, variant: 'destructive' })
+        return
+      }
       toast({ title: `${toSave.length} game${toSave.length > 1 ? 's' : ''} saved ✓` })
       router.refresh()
     })

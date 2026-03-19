@@ -547,3 +547,150 @@ export async function updateMatchFormat(
   revalidateMatchPaths(match.tournament_id, matchId, tRow?.championship_id ?? null)
   return { success: true }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// bulkSaveGameScores — saves all games for a match in a single optimised pass.
+//
+// Replaces the sequential loop of saveGameScore() calls in the client.
+// One DB round-trip to load, one upsert per game (can be batched), one match
+// update, one revalidate — instead of N × 5 round-trips.
+// ─────────────────────────────────────────────────────────────────────────────
+export async function bulkSaveGameScores(
+  matchId: string,
+  entries: Array<{ gameNumber: number; score1: number; score2: number }>,
+): Promise<{ success: true } | { success: false; error: string }> {
+  if (!entries.length) return { success: true }
+
+  const supabase = createClient()
+
+  // ── 1. Load match + existing games in parallel ──────────────────────────
+  let match: Awaited<ReturnType<typeof loadMatchWithFormat>>
+  let existingGames: Game[]
+  try {
+    ;[match, existingGames] = await Promise.all([
+      loadMatchWithFormat(supabase, matchId),
+      loadGames(supabase, matchId),
+    ])
+  } catch (e) {
+    return { success: false, error: (e as Error).message }
+  }
+
+  const tournamentFormat = (match.tournament as unknown as { format: MatchFormat }).format
+  const format: MatchFormat = (match as unknown as { match_format?: MatchFormat | null }).match_format ?? tournamentFormat
+  const player1Id = match.player1_id
+  const player2Id = match.player2_id
+  const isTeamSubmatch = match.match_kind === 'team_submatch'
+  const p1 = player1Id ?? (isTeamSubmatch ? 'TEAM_A' : null)
+  const p2 = player2Id ?? (isTeamSubmatch ? 'TEAM_B' : null)
+
+  if (!p1 || !p2) {
+    return { success: false, error: 'Both players must be assigned before entering scores.' }
+  }
+
+  // ── 2. Validate all scores up-front ─────────────────────────────────────
+  for (const { gameNumber, score1, score2 } of entries) {
+    const vr = validateGameScore({ score1, score2 })
+    if (!vr.ok) {
+      return { success: false, error: `Game ${gameNumber}: ${formatValidationErrors(vr)}` }
+    }
+  }
+
+  // ── 3. Upsert all game rows ──────────────────────────────────────────────
+  // Build game rows with winner_ids
+  const gameRows = entries.map(({ gameNumber, score1, score2 }) => {
+    const gameWinnerId = isTeamSubmatch ? null : deriveGameWinnerId(score1, score2, p1, p2)
+    return { match_id: matchId, game_number: gameNumber, score1, score2, winner_id: gameWinnerId }
+  })
+
+  const { error: upsertErr } = await supabase
+    .from('games')
+    .upsert(gameRows, { onConflict: 'match_id,game_number' })
+  if (upsertErr) return { success: false, error: upsertErr.message }
+
+  // ── 4. Build final game list in memory ───────────────────────────────────
+  const upsertedByNum = new Map(gameRows.map(g => [g.game_number, g]))
+  const allGames: Game[] = [
+    ...existingGames.filter(g => !upsertedByNum.has(g.game_number)),
+    ...gameRows.map(g => ({ ...g } as unknown as Game)),
+  ].sort((a, b) => a.game_number - b.game_number)
+
+  // ── 5. Compute final match state ─────────────────────────────────────────
+  const matchState = computeMatchState(allGames, format, p1, p2)
+  const matchWinnerId: string | null = isTeamSubmatch
+    ? null
+    : matchState.outcome === 'player1_wins' ? p1
+    : matchState.outcome === 'player2_wins' ? p2
+    : null
+  const isMatchComplete = isTeamSubmatch
+    ? matchState.outcome !== 'in_progress'
+    : !!matchWinnerId
+  const newStatus = isMatchComplete ? 'complete' : (allGames.length > 0 ? 'live' : 'pending')
+
+  // ── 6. Update match row ──────────────────────────────────────────────────
+  const { error: matchUpdateErr } = await supabase
+    .from('matches')
+    .update({
+      player1_games: matchState.player1Games,
+      player2_games: matchState.player2Games,
+      winner_id:     matchWinnerId,
+      status:        newStatus,
+      started_at:    match.started_at ?? new Date().toISOString(),
+      completed_at:  isMatchComplete ? new Date().toISOString() : null,
+    })
+    .eq('id', matchId)
+  if (matchUpdateErr) return { success: false, error: matchUpdateErr.message }
+
+  // ── 7. Team submatch: update parent team_match scores ──────────────────
+  if (isTeamSubmatch && isMatchComplete) {
+    const { updateSubmatchResult } = await import('./teamLeague')
+    await updateSubmatchResult(matchId, match.tournament_id)
+  }
+
+  // ── 8. Propagate winner to next match (KO brackets only) ────────────────
+  if (matchWinnerId && match.next_match_id) {
+    const col = match.next_slot === 1 ? 'player1_id' : 'player2_id'
+    const { error: propErr } = await supabase
+      .from('matches').update({ [col]: matchWinnerId }).eq('id', match.next_match_id)
+    if (propErr) return { success: false, error: `Match saved but bracket advance failed: ${propErr.message}` }
+  }
+
+  // ── 9. DE: route loser to Losers Bracket ─────────────────────────────────
+  const bracketSide = (match as unknown as { bracket_side?: string | null }).bracket_side
+  const loserNextMatchId = (match as unknown as { loser_next_match_id?: string | null }).loser_next_match_id
+  const loserNextSlot = (match as unknown as { loser_next_slot?: number | null }).loser_next_slot
+  if (isMatchComplete && bracketSide === 'winners' && loserNextMatchId && matchWinnerId) {
+    const loserId = match.player1_id === matchWinnerId ? match.player2_id : match.player1_id
+    if (loserId) {
+      const col = loserNextSlot === 1 ? 'player1_id' : 'player2_id'
+      await supabase.from('matches').update({ [col]: loserId }).eq('id', loserNextMatchId)
+    }
+  }
+
+  // ── 10. Grand Final / KO Final completion ────────────────────────────────
+  if (isMatchComplete && bracketSide === 'grand_final' && matchWinnerId) {
+    const { advanceDEPlayers } = await import('./doubleElimination')
+    await advanceDEPlayers(matchId, match.tournament_id)
+  } else if (matchWinnerId && !match.next_match_id && match.match_kind !== 'round_robin' && bracketSide !== 'grand_final') {
+    await supabase.from('tournaments').update({ status: 'complete' }).eq('id', match.tournament_id)
+  }
+
+  // ── 11. Audit log (fire and forget) ──────────────────────────────────────
+  void supabase.auth.getUser().then(({ data }: { data: { user: { id: string } | null } }) => {
+    const user = data.user
+    if (user) {
+      void supabase.from('audit_log').insert({
+        actor_id:   user.id,
+        action:     'bulk_save_game_scores',
+        table_name: 'games',
+        record_id:  matchId,
+        new_data:   { games_saved: entries.length, match_status: newStatus, match_winner: matchWinnerId },
+      })
+    }
+  })
+
+  // ── 12. Revalidate ────────────────────────────────────────────────────────
+  const champId = (match.tournament as unknown as { championship_id: string | null }).championship_id
+  revalidateMatchPaths(match.tournament_id, matchId, champId)
+
+  return { success: true }
+}
