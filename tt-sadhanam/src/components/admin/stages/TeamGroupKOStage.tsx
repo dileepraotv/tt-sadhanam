@@ -335,11 +335,15 @@ function useTeamGroupData(tournamentId: string) {
 
     // Always reload teams — ref may be stale after import/add/edit actions
     await loadTeams()
-    if (gen !== genRef.current) return
+    // If a newer load has started, still clear our spinner and bail
+    if (gen !== genRef.current) { setLoading(false); return }
 
     // loadMatches and loadGroups are independent — run in parallel
     await Promise.all([loadMatches(gen), loadGroups(gen)])
-    if (gen === genRef.current) setLoading(false)
+    // Always clear the spinner — even if a newer gen superseded us.
+    // Without this, realtime events that fire during generation increment
+    // genRef and the spinner never clears.
+    setLoading(false)
   }, [loadTeams, loadMatches, loadGroups])
 
   // Initial mount load
@@ -347,7 +351,7 @@ function useTeamGroupData(tournamentId: string) {
     loadTeams().then(() => {
       const gen = ++genRef.current
       Promise.all([loadMatches(gen), loadGroups(gen)])
-        .then(() => { if (gen === genRef.current) setLoading(false) })
+        .then(() => { setLoading(false) })
     })
   }, [tournamentId])
 
