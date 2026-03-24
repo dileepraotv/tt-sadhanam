@@ -123,19 +123,23 @@ export function MultiStageSetup({
 
     setLoading(true)
     startTransition(async () => {
-      const result = await createRRStage({
-        tournamentId:   tournament.id,
-        stageNumber:    1,
-        numberOfGroups: nGroups,
-        advanceCount:   advance,
-        matchFormat,
-        allowBestThird: allowThird,
-        bestThirdCount: allowThird ? nThird : 0,
-      })
-      if (result.error) {
-        toast({ title: 'Could not create stage', description: result.error, variant: 'destructive' })
-      } else {
-        toast({ title: 'Stage 1 created', description: `${groupLayoutSummary(layout)} · top ${advance} advance` })
+      try {
+        const result = await createRRStage({
+          tournamentId:   tournament.id,
+          stageNumber:    1,
+          numberOfGroups: nGroups,
+          advanceCount:   advance,
+          matchFormat,
+          allowBestThird: allowThird,
+          bestThirdCount: allowThird ? nThird : 0,
+        })
+        if (result.error) {
+          toast({ title: 'Could not create stage', description: result.error, variant: 'destructive' })
+        } else {
+          toast({ title: 'Stage 1 created', description: `${groupLayoutSummary(layout)} · top ${advance} advance` })
+        }
+      } finally {
+        setLoading(false)
       }
     })
   }
@@ -144,11 +148,15 @@ export function MultiStageSetup({
     if (!stage) return
     setLoading(true)
     startTransition(async () => {
-      const result = await deleteStageOnly(stage.id, tournament.id)
-      if (result.error) {
-        toast({ title: 'Could not go back', description: result.error, variant: 'destructive' })
-      } else {
-        toast({ title: 'Back to configuration' })
+      try {
+        const result = await deleteStageOnly(stage.id, tournament.id)
+        if (result.error) {
+          toast({ title: 'Could not go back', description: result.error, variant: 'destructive' })
+        } else {
+          toast({ title: 'Back to configuration' })
+        }
+      } finally {
+        setLoading(false)
       }
     })
   }
@@ -157,11 +165,15 @@ export function MultiStageSetup({
     if (!stage) return
     setLoading(true)
     startTransition(async () => {
-      const result = await generateGroups(stage.id, tournament.id)
-      if (result.error) {
-        toast({ title: 'Group assignment failed', description: result.error, variant: 'destructive' })
-      } else {
-        toast({ title: 'Players assigned to groups' })
+      try {
+        const result = await generateGroups(stage.id, tournament.id)
+        if (result.error) {
+          toast({ title: 'Group assignment failed', description: result.error, variant: 'destructive' })
+        } else {
+          toast({ title: 'Players assigned to groups' })
+        }
+      } finally {
+        setLoading(false)
       }
     })
   }
@@ -170,11 +182,15 @@ export function MultiStageSetup({
     if (!stage) return
     setLoading(true)
     startTransition(async () => {
-      const result = await generateFixtures(stage.id, tournament.id)
-      if (result.error) {
-        toast({ title: 'Fixture generation failed', description: result.error, variant: 'destructive' })
-      } else {
-        toast({ title: '🗓 Fixtures generated', description: `${result.matchCount} matches created` })
+      try {
+        const result = await generateFixtures(stage.id, tournament.id)
+        if (result.error) {
+          toast({ title: 'Fixture generation failed', description: result.error, variant: 'destructive' })
+        } else {
+          toast({ title: '🗓 Fixtures generated', description: `${result.matchCount} matches created` })
+        }
+      } finally {
+        setLoading(false)
       }
     })
   }
@@ -183,33 +199,42 @@ export function MultiStageSetup({
     if (!stage) return
     setLoading(true)
     startTransition(async () => {
-      const result = await resetStage(stage.id, tournament.id)
-      setShowReset(false)
-      if (result.error) {
-        toast({ title: 'Reset failed', description: result.error, variant: 'destructive' })
-      } else {
-        toast({ title: 'Stage 1 reset', description: 'All matches and scores cleared.' })
+      try {
+        const result = await resetStage(stage.id, tournament.id)
+        setShowReset(false)
+        if (result.error) {
+          toast({ title: 'Reset failed', description: result.error, variant: 'destructive' })
+        } else {
+          toast({ title: 'Stage 1 reset', description: 'All matches and scores cleared.' })
+        }
+      } finally {
+        setLoading(false)
       }
     })
   }
 
   const handleCloseAndAdvance = () => {
     if (!stage) return
+    setLoading(true)
     startTransition(async () => {
-      // First close Stage 1
-      const closeResult = await closeStage1(stage.id, tournament.id)
-      if (closeResult.error) {
+      try {
+        // First close Stage 1
+        const closeResult = await closeStage1(stage.id, tournament.id)
+        if (closeResult.error) {
+          setShowAdvance(false)
+          toast({ title: 'Cannot close Stage 1', description: closeResult.error, variant: 'destructive' })
+          return
+        }
+        // Then generate knockout
+        const koResult = await generateKnockoutStage(tournament.id, stage.id)
         setShowAdvance(false)
-        toast({ title: 'Cannot close Stage 1', description: closeResult.error, variant: 'destructive' })
-        return
-      }
-      // Then generate knockout
-      const koResult = await generateKnockoutStage(tournament.id, stage.id)
-      setShowAdvance(false)
-      if (koResult.error) {
-        toast({ title: 'Knockout generation failed', description: koResult.error, variant: 'destructive' })
-      } else {
-        toast({ title: '🎯 Stage 2 bracket generated!', description: 'Knockout bracket is ready.' })
+        if (koResult.error) {
+          toast({ title: 'Knockout generation failed', description: koResult.error, variant: 'destructive' })
+        } else {
+          toast({ title: '🎯 Stage 2 bracket generated!', description: 'Knockout bracket is ready.' })
+        }
+      } finally {
+        setLoading(false)
       }
     })
   }
