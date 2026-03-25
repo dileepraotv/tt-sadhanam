@@ -250,21 +250,24 @@ export function ExcelUpload({ tournamentId, existingPlayers, onComplete }: Props
     if (!validRows.length) return
     setLoading(true)
     startTransition(async () => {
-      const result = await bulkAddPlayersFromSheet(
-        tournamentId,
-        validRows.map(r => ({ name: r.name, club: r.club, seed: r.seed, preferredGroup: r.preferredGroup })),
-      )
-      setLoading(false)
-      if (result.error) {
-        toast({ title: 'Import failed', description: result.error, variant: 'destructive' })
-      } else {
-        toast({
-          title: `✓ ${result.count} player${result.count !== 1 ? 's' : ''} imported`,
-          description: errorRows.length ? `${errorRows.length} row${errorRows.length > 1 ? 's' : ''} skipped` : undefined,
-        })
-        const count = parsed?.length ?? 0
-        setParsed(null); setFileName(''); onComplete(count)
-        router.refresh()
+      try {
+        const result = await bulkAddPlayersFromSheet(
+          tournamentId,
+          validRows.map(r => ({ name: r.name, club: r.club, seed: r.seed, preferredGroup: r.preferredGroup })),
+        )
+        if (result.error) {
+          toast({ title: 'Import failed', description: result.error, variant: 'destructive' })
+        } else {
+          toast({
+            title: `✓ ${result.count} player${result.count !== 1 ? 's' : ''} imported`,
+            description: errorRows.length ? `${errorRows.length} row${errorRows.length > 1 ? 's' : ''} skipped` : undefined,
+          })
+          const count = parsed?.length ?? 0
+          setParsed(null); setFileName(''); onComplete(count)
+          router.refresh()
+        }
+      } finally {
+        setLoading(false)
       }
     })
   }

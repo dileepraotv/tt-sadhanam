@@ -85,14 +85,17 @@ export function PlayerManager({ tournament, players }: PlayerManagerProps) {
     if (seed) fd.set('seed', seed)
     setLoading(true)
     startTransition(async () => {
-      const result = await addPlayer(tournament.id, fd)
-      setLoading(false)
-      if (result.error) {
-        toast({ title: 'Could not add player', description: result.error, variant: 'destructive' })
-      } else {
-        setName(''); setClub(''); setSeed(''); setGroup(''); setNameError('')
-        toast({ title: 'Player added', description: trimmed })
-        router.refresh()
+      try {
+        const result = await addPlayer(tournament.id, fd)
+        if (result.error) {
+          toast({ title: 'Could not add player', description: result.error, variant: 'destructive' })
+        } else {
+          setName(''); setClub(''); setSeed(''); setGroup(''); setNameError('')
+          toast({ title: 'Player added', description: trimmed })
+          router.refresh()
+        }
+      } finally {
+        setLoading(false)
       }
     })
   }
@@ -102,14 +105,17 @@ export function PlayerManager({ tournament, players }: PlayerManagerProps) {
     if (!bulkText.trim()) return
     setLoading(true)
     startTransition(async () => {
-      const result = await bulkAddPlayers(tournament.id, bulkText)
-      setLoading(false)
-      if (result.error) {
-        toast({ title: 'Error', description: result.error, variant: 'destructive' })
-      } else {
-        setBulkText('')
-        toast({ title: `${result.count} player${result.count !== 1 ? 's' : ''} added` })
-        router.refresh()
+      try {
+        const result = await bulkAddPlayers(tournament.id, bulkText)
+        if (result.error) {
+          toast({ title: 'Error', description: result.error, variant: 'destructive' })
+        } else {
+          setBulkText('')
+          toast({ title: `${result.count} player${result.count !== 1 ? 's' : ''} added` })
+          router.refresh()
+        }
+      } finally {
+        setLoading(false)
       }
     })
   }
@@ -118,13 +124,16 @@ export function PlayerManager({ tournament, players }: PlayerManagerProps) {
   const handleDelete = (p: Player) => {
     setLoading(true)
     startTransition(async () => {
-      const result = await deletePlayer(tournament.id, p.id)
-      setLoading(false)
-      if (result.error) {
-        toast({ title: 'Delete failed', description: result.error, variant: 'destructive' })
-      } else {
-        toast({ title: 'Player removed', description: p.name })
-        router.refresh()
+      try {
+        const result = await deletePlayer(tournament.id, p.id)
+        if (result.error) {
+          toast({ title: 'Delete failed', description: result.error, variant: 'destructive' })
+        } else {
+          toast({ title: 'Player removed', description: p.name })
+          router.refresh()
+        }
+      } finally {
+        setLoading(false)
       }
     })
   }
@@ -136,10 +145,13 @@ export function PlayerManager({ tournament, players }: PlayerManagerProps) {
     if (s !== null && (!Number.isInteger(s) || s < 1)) return   // ignore invalid
     setLoading(true)
     startTransition(async () => {
-      const result = await updatePlayerSeed(tournament.id, playerId, s)
-      setLoading(false)
-      if (result.error) toast({ title: 'Seed error', description: result.error, variant: 'destructive' })
-      else router.refresh()
+      try {
+        const result = await updatePlayerSeed(tournament.id, playerId, s)
+        if (result.error) toast({ title: 'Seed error', description: result.error, variant: 'destructive' })
+        else router.refresh()
+      } finally {
+        setLoading(false)
+      }
     })
   }
 
@@ -150,17 +162,20 @@ export function PlayerManager({ tournament, players }: PlayerManagerProps) {
     if (!editName.trim()) return
     setLoading(true)
     startTransition(async () => {
-      const result = await updatePlayer(tournament.id, playerId, {
-        name: editName.trim(),
-        club: editClub.trim() || null,
-      })
-      setLoading(false)
-      if (result.error) {
-        toast({ title: 'Update error', description: result.error, variant: 'destructive' })
-      } else {
-        setEditingId(null)
-        toast({ title: 'Player updated' })
-        router.refresh()
+      try {
+        const result = await updatePlayer(tournament.id, playerId, {
+          name: editName.trim(),
+          club: editClub.trim() || null,
+        })
+        if (result.error) {
+          toast({ title: 'Update error', description: result.error, variant: 'destructive' })
+        } else {
+          setEditingId(null)
+          toast({ title: 'Player updated' })
+          router.refresh()
+        }
+      } finally {
+        setLoading(false)
       }
     })
   }
@@ -170,13 +185,16 @@ export function PlayerManager({ tournament, players }: PlayerManagerProps) {
     setShowDeleteAll(false)
     setLoading(true)
     startTransition(async () => {
-      const result = await deleteAllPlayers(tournament.id)
-      setLoading(false)
-      if (result.error) {
-        toast({ title: 'Could not delete players', description: result.error, variant: 'destructive' })
-      } else {
-        toast({ title: `Cleared ${result.count} player${result.count !== 1 ? 's' : ''}` })
-        router.refresh()
+      try {
+        const result = await deleteAllPlayers(tournament.id)
+        if (result.error) {
+          toast({ title: 'Could not delete players', description: result.error, variant: 'destructive' })
+        } else {
+          toast({ title: `Cleared ${result.count} player${result.count !== 1 ? 's' : ''}` })
+          router.refresh()
+        }
+      } finally {
+        setLoading(false)
       }
     })
   }

@@ -52,12 +52,15 @@ export function DoubleEliminationStage({ tournament, players, matches, matchBase
   const handleGenerate = () => {
     setLoading(true)
     startTransition(async () => {
-      const result = await generateDEBracket(tournament.id)
-      setLoading(false)
-      if (result.error) {
-        toast({ title: 'Generation failed', description: result.error, variant: 'destructive' })
-      } else {
-        toast({ title: `✅ Double elimination bracket generated — ${result.totalMatches} matches` })
+      try {
+        const result = await generateDEBracket(tournament.id)
+        if (result.error) {
+          toast({ title: 'Generation failed', description: result.error, variant: 'destructive' })
+        } else {
+          toast({ title: `✅ Double elimination bracket generated — ${result.totalMatches} matches` })
+        }
+      } finally {
+        setLoading(false)
       }
     })
   }
@@ -66,12 +69,15 @@ export function DoubleEliminationStage({ tournament, players, matches, matchBase
     setLoading(true)
     setShowReset(false)
     startTransition(async () => {
-      const result = await resetDEBracket(tournament.id)
-      setLoading(false)
-      if (result.error) {
-        toast({ title: 'Reset failed', description: result.error, variant: 'destructive' })
-      } else {
-        toast({ title: 'Bracket reset' })
+      try {
+        const result = await resetDEBracket(tournament.id)
+        if (result.error) {
+          toast({ title: 'Reset failed', description: result.error, variant: 'destructive' })
+        } else {
+          toast({ title: 'Bracket reset' })
+        }
+      } finally {
+        setLoading(false)
       }
     })
   }

@@ -524,22 +524,25 @@ export function SingleMatchInlineScorer({ matchId, player1Name, player2Name, onS
 
   const load = useCallback(async () => {
     setLoading(true)
-    const sb = await getSb()
-    const [gRes, mRes] = await Promise.all([
-      sb.from('games').select('*').eq('match_id', matchId).order('game_number'),
-      sb.from('matches').select('match_format, player1_id, player2_id, status').eq('id', matchId).single(),
-    ])
-    const gs = gRes.data ?? []
-    setGames(gs)
-    const init: Record<number,{s1:string;s2:string}> = {}
-    for (const g of gs) init[g.game_number] = { s1: String(g.score1 ?? ''), s2: String(g.score2 ?? '') }
-    setLocal(init)
-    setSaveError(null)
-    if (mRes.data?.match_format) setFormat(mRes.data.match_format as 'bo3'|'bo5'|'bo7')
-    if (mRes.data?.player1_id)   setP1Id(mRes.data.player1_id)
-    if (mRes.data?.player2_id)   setP2Id(mRes.data.player2_id)
-    if (mRes.data?.status)       setMatchStatus(mRes.data.status)
-    setLoading(false)
+    try {
+      const sb = await getSb()
+      const [gRes, mRes] = await Promise.all([
+        sb.from('games').select('*').eq('match_id', matchId).order('game_number'),
+        sb.from('matches').select('match_format, player1_id, player2_id, status').eq('id', matchId).single(),
+      ])
+      const gs = gRes.data ?? []
+      setGames(gs)
+      const init: Record<number,{s1:string;s2:string}> = {}
+      for (const g of gs) init[g.game_number] = { s1: String(g.score1 ?? ''), s2: String(g.score2 ?? '') }
+      setLocal(init)
+      setSaveError(null)
+      if (mRes.data?.match_format) setFormat(mRes.data.match_format as 'bo3'|'bo5'|'bo7')
+      if (mRes.data?.player1_id)   setP1Id(mRes.data.player1_id)
+      if (mRes.data?.player2_id)   setP2Id(mRes.data.player2_id)
+      if (mRes.data?.status)       setMatchStatus(mRes.data.status)
+    } finally {
+      setLoading(false)
+    }
   }, [matchId, getSb])
 
   useEffect(() => { load() }, [load])
