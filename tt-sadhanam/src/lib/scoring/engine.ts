@@ -407,3 +407,89 @@ export function inferGameNumbersToShow(
   // Always show all game rows so scores can be entered at once
   return Array.from({ length: maxGames }, (_, i) => i + 1)
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 7. filterGamesToSave
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Determines which games from a list should actually be saved to the database.
+ *
+ * When a user enters multiple game scores at once, some might come after
+ * the match winner is already decided. This function filters them out.
+ *
+ * Example: Best of 3, user enters all 3 games
+ *   - Game 1: Player A 11–9
+ *   - Game 2: Player A 11–8  ← Player A now has 2 wins (match decided)
+ *   - Game 3: [ignored, would be discarded]
+ *
+ * Uses the existing games plus newly entered ones to compute cumulative wins.
+ *
+ * @param gamesToSave       Games the user entered (not yet in DB)
+ * @param existingGames     Games already in database
+ * @param format            Match format (Bo3, Bo5, Bo7)
+ * @param player1Id         Player 1 ID (null → TBD)
+ * @param player2Id         Player 2 ID (null → TBD)
+ * @returns Object with:
+ *   - validGames: Games that should be saved (up to match decision point)
+ *   - skippedCount: How many games were skipped
+ *   - matchWonByPlayer1: true if player 1 wins; false if player 2; null if incomplete
+ */
+export function filterGamesToSave(
+  gamesToSave:   Array<{ game_number: number; score1: number; score2: number }>,
+  existingGames: Game[],
+  format:        MatchFormat,
+  player1Id:     string | null,
+  player2Id:     string | null,
+): {
+  validGames: Array<{ game_number: number; score1: number; score2: number }>
+  skippedCount: number
+  matchWonByPlayer1: boolean | null
+  decidingGameNumber: number | null
+} {
+  const { gamesNeeded } = FORMAT_CONFIGS[format]
+
+  // Start with cumulative wins from existing games
+  const existingState = computeMatchState(existingGames, format, player1Id, player2Id)
+  let p1Wins = existingState.player1Games
+  let p2Wins = existingState.player2Games
+
+  const validGames: typeof gamesToSave = []
+  let skippedCount = 0
+  let decidingGameNumber: number | null = null
+  let matchWonByPlayer1: boolean | null = null
+
+  for (const game of gamesToSave) {
+    // If match is already decided, skip this and remaining games
+    if (p1Wins >= gamesNeeded || p2Wins >= gamesNeeded) {
+      skippedCount++
+      continue
+    }
+
+    // Include this game
+    validGames.push(game)
+
+    // Update cumulative wins
+    if (game.score1 > game.score2) {
+      p1Wins++
+    } else {
+      p2Wins++
+    }
+
+    // Check if match is now decided
+    if (p1Wins >= gamesNeeded) {
+      decidingGameNumber = game.game_number
+      matchWonByPlayer1 = true
+    } else if (p2Wins >= gamesNeeded) {
+      decidingGameNumber = game.game_number
+      matchWonByPlayer1 = false
+    }
+  }
+
+  return {
+    validGames,
+    skippedCount,
+    matchWonByPlayer1,
+    decidingGameNumber,
+  }
+}

@@ -469,6 +469,18 @@ function PureRRInlineScorer({ matchId, p1Name, p2Name, onSaved }: {
       matchStatus==='complete',
     )
     if (!res.success) { setSaveError(res.error); setSaving(false); return }
+    
+    // Show notification if any games were skipped due to match already being decided
+    if (res.skippedCount > 0 && res.decidingGameNumber) {
+      const gameText = res.skippedCount === 1 ? 'Game' : 'Games'
+      const gameNums = Array.from({length: res.skippedCount}, (_, i) => res.decidingGameNumber! + i + 1).join(', ')
+      toast({
+        title: `${gameText} ${gameNums} not saved`,
+        description: `Match winner was already decided at game ${res.decidingGameNumber}`,
+        variant: 'warning',
+      })
+    }
+    
     setSaving(false); await load(); router.refresh(); onSaved()
   }
 

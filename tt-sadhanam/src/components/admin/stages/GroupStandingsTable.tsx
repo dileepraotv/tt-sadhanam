@@ -15,6 +15,7 @@ import { AlertTriangle } from 'lucide-react'
 import { validateGameScore, formatValidationErrors } from '@/lib/scoring/engine'
 import { MatchCard } from '@/components/bracket/MatchCard'
 import { cn } from '@/lib/utils'
+import { toast } from '@/components/ui/toaster'
 import type { Match } from '@/lib/types'
 import type { GroupStandings } from '@/lib/roundrobin/types'
 
@@ -497,6 +498,18 @@ function InlineMatchScorer({ matchId, player1Name, player2Name, onSaved }: {
       matchStatus === 'complete',
     )
     if (!res.success) { setSaveError(res.error); setSaving(false); return }
+    
+    // Show notification if any games were skipped due to match already being decided
+    if (res.skippedCount > 0 && res.decidingGameNumber) {
+      const gameText = res.skippedCount === 1 ? 'Game' : 'Games'
+      const gameNums = Array.from({length: res.skippedCount}, (_, i) => res.decidingGameNumber! + i + 1).join(', ')
+      toast({
+        title: `${gameText} ${gameNums} not saved`,
+        description: `Match winner was already decided at game ${res.decidingGameNumber}`,
+        variant: 'warning',
+      })
+    }
+    
     setSaving(false)
     await load()
     router.refresh()

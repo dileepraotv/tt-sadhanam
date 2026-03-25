@@ -163,12 +163,16 @@ export function RubberScorer({
         status: 'pending', winner_id: null, player1_games: 0, player2_games: 0, completed_at: null,
       }).eq('id', submatch.match_id)
     }
+    const skippedGames: number[] = []
     for (const { gn, sc } of entries) {
       const s1 = parseInt(sc!.s1, 10), s2 = parseInt(sc!.s2, 10)
       if (isNaN(s1) || isNaN(s2)) continue
       const res = await saveGameScore(submatch.match_id, gn, s1, s2)
       if (!res.success) {
-        if (res.error?.includes('Cannot add') || res.error?.includes('already complete')) break
+        if (res.error?.includes('Cannot add') || res.error?.includes('already complete')) {
+          skippedGames.push(gn)
+          continue
+        }
         toast({ title: `Game ${gn}: ${res.error}`, variant: 'destructive' })
         setSaving(false)
         return
@@ -176,6 +180,18 @@ export function RubberScorer({
     }
     setSaving(false)
     setEditMode(false)
+    
+    // Show notification if any games were skipped due to match already being decided
+    if (skippedGames.length > 0) {
+      const gameText = skippedGames.length === 1 ? 'Game' : 'Games'
+      const gameNums = skippedGames.join(', ')
+      toast({
+        title: `${gameText} ${gameNums} not saved`,
+        description: 'Match winner was already decided',
+        variant: 'warning',
+      })
+    }
+    
     toast({ title: 'Scores saved', variant: 'success' })
     onSaved()
   }
