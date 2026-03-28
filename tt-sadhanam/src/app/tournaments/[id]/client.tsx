@@ -361,7 +361,7 @@ function TournamentHero({ tournament, liveCount, champion, connectionStatus, isA
   const formatTypeLabel: Record<string, string> = {
     single_knockout:      'Singles Knockout',
     single_round_robin:   'Singles RR + Knockout',
-    multi_rr_to_knockout: 'Singles Groups + Knockout',
+    multi_rr_to_knockout: 'Singles RR + Knockout',
   }
 
   return (

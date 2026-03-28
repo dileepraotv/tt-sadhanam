@@ -118,7 +118,7 @@ export default async function PublicEventPage({ params }: PageProps) {
   const ftMeta: Record<string, { label: string; color: string }> = {
     single_knockout:      { label: 'Singles Knockout',           color: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700' },
     single_round_robin:   { label: 'Singles RR + Knockout',      color: 'bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-800' },
-    multi_rr_to_knockout: { label: 'Singles Groups + Knockout',  color: 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-800' },
+    multi_rr_to_knockout: { label: 'Singles RR + Knockout',  color: 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-800' },
     pure_round_robin:     { label: 'Singles Round Robin',        color: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' },
     double_elimination:   { label: 'Singles Double Elimination', color: 'bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 border-violet-200 dark:border-violet-800' },
     team_league:          { label: 'Teams RR + Knockout',        color: 'bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800' },

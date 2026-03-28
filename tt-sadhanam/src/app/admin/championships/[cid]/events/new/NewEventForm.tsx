@@ -80,26 +80,24 @@ const FORMAT_OPTIONS: FormatOption[] = [
     description: 'Winners and Losers brackets run in parallel. A player must lose twice to be eliminated, giving a second chance to every participant.',
     bullets: ['Winners + Losers brackets', 'Grand Final with bracket reset', 'Fairer than single KO', 'Best of 5 per match'],
     defaultName: 'Singles - Double Elimination',
-    badge: 'Advanced',
   },
   {
     value: 'single_round_robin', category: 'singles',
     icon: <Users className="h-4 w-4" />,
-    label: 'Groups + Knockout',
+    label: 'Round Robin + Knockout',
     tagline: 'Round-robin groups then knockout',
     description: 'Players are placed into round-robin groups. Top finishers from each group advance to a single-elimination knockout bracket.',
     bullets: ['Configure group count & size', 'Best third across groups option', 'Group standings + KO bracket', 'Most common tournament format'],
     defaultName: 'Singles - Round Robin + Knockout',
-    badge: 'Popular',
   },
   {
     value: 'multi_rr_to_knockout', category: 'singles',
     icon: <Layers className="h-4 w-4" />,
-    label: 'Groups + Knockout (Flexible)',
+    label: 'Round Robin + Knockout (Flexible)',
     tagline: 'Top N across all groups advance',
-    description: 'Like Groups + Knockout, but advancement is based on overall ranking across all groups rather than per-group qualification.',
+    description: 'Like Round Robin + Knockout, but advancement is based on overall ranking across all groups rather than per-group qualification.',
     bullets: ['Top N players across all groups advance', 'More balanced bracket seeding', 'Best-third handling built in', 'Configurable advance count'],
-    defaultName: 'Singles - Groups + Knockout',
+    defaultName: 'Singles - Round Robin + Knockout (Flexible)',
   },
   {
     value: 'team_league_ko', category: 'teams',
@@ -107,9 +105,8 @@ const FORMAT_OPTIONS: FormatOption[] = [
     label: 'Knockout (Corbillon Cup)',
     tagline: '4 singles + 1 doubles · 2 players/team',
     description: 'Team knockout using the Corbillon Cup rubber order. Each tie consists of 4 singles rubbers and 1 doubles rubber. First team to win 3 rubbers wins the tie.',
-    bullets: ['Order: A×X, B×Y, Doubles A/B×X/Y, A×Y, B×X', '2 players per team (positions A and B)', 'Seeded bracket draw', 'Same scoring UI as Groups+KO'],
+    bullets: ['Order: A×X, B×Y, Doubles A/B×X/Y, A×Y, B×X', '2 players per team (positions A and B)', 'Seeded bracket draw', 'Same scoring UI as Round Robin+KO'],
     defaultName: 'Teams - Knockout (Corbillon Cup)',
-    badge: 'Teams',
   },
   {
     value: 'team_league_swaythling', category: 'teams',
@@ -117,9 +114,8 @@ const FORMAT_OPTIONS: FormatOption[] = [
     label: 'Knockout (Swaythling Cup)',
     tagline: '5 singles, no doubles · 3 players/team',
     description: 'Team knockout using the Swaythling Cup rubber order. Each tie consists of 5 singles rubbers and no doubles. First team to win 3 rubbers wins the tie.',
-    bullets: ['Order: A×X, B×Y, C×Z, A×Y, B×X', '3 players per team (positions A, B and C)', 'Seeded bracket draw', 'Same scoring UI as Groups+KO'],
+    bullets: ['Order: A×X, B×Y, C×Z, A×Y, B×X', '3 players per team (positions A, B and C)', 'Seeded bracket draw', 'Same scoring UI as Round Robin+KO'],
     defaultName: 'Teams - Knockout (Swaythling Cup)',
-    badge: 'Teams',
   },
   {
     value: 'team_group_corbillon', category: 'teams',
@@ -129,7 +125,6 @@ const FORMAT_OPTIONS: FormatOption[] = [
     description: 'Teams are seeded into round-robin groups. Top teams from each group advance to a Corbillon Cup knockout bracket (4 singles + 1 doubles).',
     bullets: ['Group stage + Corbillon KO bracket', '2 players per team', 'Configurable group size & advance count', 'Full group standings + KO draw'],
     defaultName: 'Teams - Groups + Knockout (Corbillon Cup)',
-    badge: 'Teams',
   },
   {
     value: 'team_group_swaythling', category: 'teams',
@@ -139,7 +134,6 @@ const FORMAT_OPTIONS: FormatOption[] = [
     description: 'Teams are seeded into round-robin groups. Top teams from each group advance to a Swaythling Cup knockout bracket (5 singles, no doubles).',
     bullets: ['Group stage + Swaythling KO bracket', '3 players per team', 'Configurable group size & advance count', 'Full group standings + KO draw'],
     defaultName: 'Teams - Groups + Knockout (Swaythling Cup)',
-    badge: 'Teams',
   },
 ]
 
