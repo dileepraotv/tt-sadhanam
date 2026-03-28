@@ -10,7 +10,7 @@
  * Standardized labels — one authoritative string per format:
  *   single_knockout         → Singles · Knockout
  *   single_round_robin      → Singles · RR + Knockout
- *   multi_rr_to_knockout    → Singles · Groups + KO
+ *   multi_rr_to_knockout    → Singles · RR + Knockout
  *   pure_round_robin        → Singles · Round Robin   ← was "League" in some files
  *   double_elimination      → Singles · Double Elim
  *   team_league             → Teams · RR + Knockout
@@ -51,7 +51,7 @@ const FORMAT_MAP: Record<string, BadgeConfig> = {
     Icon:  Users,
   },
   multi_rr_to_knockout: {
-    label: 'Singles · Groups + KO',
+    label: 'Singles · RR + Knockout',
     color: 'text-orange-700 dark:text-orange-300 bg-orange-100 dark:bg-orange-900/30 border-orange-200 dark:border-orange-800/60',
     Icon:  Layers,
   },
