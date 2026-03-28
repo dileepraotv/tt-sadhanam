@@ -509,9 +509,10 @@ function PureRRInlineScorer({ matchId, p1Name, p2Name, onSaved }: {
           </button>
         ))}
       </div>
-      <div className="grid gap-1" style={{gridTemplateColumns:`minmax(80px,1fr) repeat(${maxG},44px)`}}>
-        <div className="text-[10px] font-bold text-muted-foreground uppercase py-1">Player</div>
-        {Array.from({length:maxG},(_,i)=><div key={i} className="text-[10px] text-center font-mono text-muted-foreground py-1 font-bold">G{i+1}</div>)}
+      <div className="overflow-x-auto">
+        <div className="grid gap-1" style={{gridTemplateColumns:`minmax(80px,1fr) repeat(${maxG},44px)`, minWidth: 'fit-content'}}>
+          <div className="text-[10px] font-bold text-muted-foreground uppercase py-1">Player</div>
+          {Array.from({length:maxG},(_,i)=><div key={i} className="text-[10px] text-center font-mono text-muted-foreground py-1 font-bold">G{i+1}</div>)}
         <div className="text-xs font-semibold py-1 truncate self-center">{p1Name}</div>
         {Array.from({length:maxG},(_,i)=>{const gn=i+1,s=games.find(g=>g.game_number===gn),{valid}=gv[gn],w=s?s.score1>s.score2:false
           return <input key={gn} type="number" min={0} max={99} value={local[gn]?.s1??''}
@@ -526,6 +527,7 @@ function PureRRInlineScorer({ matchId, p1Name, p2Name, onSaved }: {
             className={cn('w-full text-center text-sm font-bold py-1.5 rounded-lg border focus:outline-none focus:ring-2 focus:ring-orange-500/40 [appearance:textfield]',
               !valid?'border-red-400 bg-red-50/40 dark:bg-red-950/20':w&&s?'border-emerald-400/50 bg-emerald-50/60 dark:bg-emerald-900/20 text-emerald-700':'border-border bg-background')}/>
         })}
+      </div>
       </div>
       {Array.from({length:maxG},(_,i)=>{const gn=i+1,{valid,errorMsg}=gv[gn];if(valid||!errorMsg)return null
         return <p key={gn} className="text-xs text-red-600 dark:text-red-400 font-medium flex items-center gap-1 mt-0.5">

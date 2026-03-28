@@ -51,14 +51,12 @@ const SINGLE_OPTIONS: FmtOption[] = [
     icon:  <Shield className="h-4 w-4" />,
     label: 'Teams - Knockout (Corbillon Cup)',
     description: '4 singles + 1 doubles per tie. A vs X, B vs Y, Doubles, A vs Y, B vs X. Each team needs 2 players.',
-    badge: 'Teams',
   },
   {
     value: 'team_league_swaythling',
     icon:  <Shield className="h-4 w-4" />,
     label: 'Teams - Knockout (Swaythling Cup)',
     description: '5 singles per tie, no doubles. A vs X, B vs Y, C vs Z, A vs Y, B vs X. Each team needs 3 players.',
-    badge: 'Teams',
   },
 ]
 
@@ -72,7 +70,7 @@ const MULTI_OPTIONS: FmtOption[] = [
   {
     value: 'multi_rr_to_knockout',
     icon:  <Layers className="h-4 w-4" />,
-    label: 'Singles - Groups + Knockout',
+    label: 'Singles - Round Robin + Knockout',
     description: 'Top N players ranked across all groups advance to a single-elimination knockout bracket.',
   },
   {
@@ -80,14 +78,12 @@ const MULTI_OPTIONS: FmtOption[] = [
     icon:  <Shield className="h-4 w-4" />,
     label: 'Teams - Groups + Knockout (Corbillon Cup)',
     description: 'Teams in groups; each tie is 4 singles + 1 doubles. Top 2 per group advance to Corbillon Cup knockout.',
-    badge: 'Teams',
   },
   {
     value: 'team_group_swaythling',
     icon:  <Shield className="h-4 w-4" />,
     label: 'Teams - Groups + Knockout (Swaythling Cup)',
     description: 'Teams in groups; each tie is 5 singles, no doubles. Top 2 per group advance to Swaythling Cup knockout.',
-    badge: 'Teams',
   },
 ]
 
@@ -101,7 +97,7 @@ const FORMAT_LABELS: Record<TournamentFormatType, string> = {
   team_group_corbillon:   'Teams - Groups + KO (Corbillon)',
   team_group_swaythling:  'Teams - Groups + KO (Swaythling)',
   single_round_robin:     'Singles - Round Robin + Knockout',
-  multi_rr_to_knockout:   'Singles - Groups + Knockout',
+  multi_rr_to_knockout:   'Singles - Round Robin + Knockout',
 }
 
 interface Props { tournament: Tournament }
@@ -111,6 +107,19 @@ function FormatBtn({
 }: {
   opt: FmtOption; isActive: boolean; disabled: boolean; isPending: boolean; onClick: () => void
 }) {
+  const isSingles = opt.label.startsWith('Singles')
+  const singlesActiveColor = 'border-blue-500 bg-blue-50 dark:bg-blue-950/30 shadow-sm shadow-blue-200 dark:shadow-blue-900/20'
+  const singlesInactiveColor = 'border-border bg-card hover:border-blue-300 dark:hover:border-blue-700 hover:bg-blue-50/40 dark:hover:bg-blue-950/10'
+  const singlesLabelColor = 'text-blue-600 dark:text-blue-400'
+  
+  const teamsActiveColor = 'border-purple-500 bg-purple-50 dark:bg-purple-950/30 shadow-sm shadow-purple-200 dark:shadow-purple-900/20'
+  const teamsInactiveColor = 'border-border bg-card hover:border-purple-300 dark:hover:border-purple-700 hover:bg-purple-50/40 dark:hover:bg-purple-950/10'
+  const teamsLabelColor = 'text-purple-600 dark:text-purple-400'
+  
+  const activeColor = isSingles ? singlesActiveColor : teamsActiveColor
+  const inactiveColor = isSingles ? singlesInactiveColor : teamsInactiveColor
+  const labelColor = isSingles ? singlesLabelColor : teamsLabelColor
+  
   return (
     <button
       onClick={onClick}
@@ -118,20 +127,15 @@ function FormatBtn({
       className={cn(
         'relative flex flex-col gap-1.5 rounded-xl border px-4 py-3 text-left transition-all duration-150',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        isActive && !disabled && 'border-orange-500 bg-orange-50 dark:bg-orange-950/30 shadow-sm shadow-orange-200 dark:shadow-orange-900/20',
-        !isActive && !disabled && 'border-border bg-card hover:border-orange-300 dark:hover:border-orange-700 hover:bg-orange-50/40 dark:hover:bg-orange-950/10 cursor-pointer',
+        isActive && !disabled && activeColor,
+        !isActive && !disabled && inactiveColor,
         disabled && 'border-border/40 bg-muted/20 opacity-50 cursor-not-allowed',
         isPending && 'opacity-70',
       )}
     >
-      {opt.badge && (
-        <span className="absolute top-2 right-2 text-[10px] font-bold uppercase tracking-wider bg-orange-100 text-orange-600 dark:bg-orange-900/50 dark:text-orange-300 px-1.5 py-0.5 rounded-full">
-          {opt.badge}
-        </span>
-      )}
       <div className={cn(
         'flex items-center gap-2 font-semibold text-sm',
-        isActive ? 'text-orange-600 dark:text-orange-400' : 'text-foreground',
+        isActive ? labelColor : 'text-foreground',
       )}>
         {opt.icon}
         {opt.label}

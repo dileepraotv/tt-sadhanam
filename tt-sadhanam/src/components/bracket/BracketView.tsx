@@ -630,11 +630,12 @@ export function SingleMatchInlineScorer({ matchId, player1Name, player2Name, onS
       </div>
 
       {/* Score grid */}
-      <div className="grid gap-1" style={{gridTemplateColumns: `minmax(80px,1fr) repeat(${maxG}, 44px)`}}>
-        <div className="text-[10px] font-bold text-muted-foreground uppercase py-1">Player</div>
-        {Array.from({length: maxG}, (_, i) => (
-          <div key={i} className="text-[10px] text-center font-mono text-muted-foreground py-1 font-bold">G{i+1}</div>
-        ))}
+      <div className="overflow-x-auto">
+        <div className="grid gap-1" style={{gridTemplateColumns: `minmax(80px,1fr) repeat(${maxG}, 44px)`, minWidth: 'fit-content'}}>
+          <div className="text-[10px] font-bold text-muted-foreground uppercase py-1">Player</div>
+          {Array.from({length: maxG}, (_, i) => (
+            <div key={i} className="text-[10px] text-center font-mono text-muted-foreground py-1 font-bold">G{i+1}</div>
+          ))}
         {/* P1 */}
         <div className="text-xs font-semibold py-1 truncate self-center">{player1Name}</div>
         {Array.from({length: maxG}, (_, i) => {
@@ -677,6 +678,7 @@ export function SingleMatchInlineScorer({ matchId, player1Name, player2Name, onS
             />
           )
         })}
+      </div>
       </div>
 
       {/* Per-game validation errors — render-time, always current */}

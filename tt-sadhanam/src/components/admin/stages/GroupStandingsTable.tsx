@@ -547,11 +547,12 @@ function InlineMatchScorer({ matchId, player1Name, player2Name, onSaved }: {
       </div>
 
       {/* Score grid */}
-      <div className="grid gap-1" style={{gridTemplateColumns:`minmax(80px,1fr) repeat(${maxG},44px)`}}>
-        <div className="text-[10px] font-bold text-muted-foreground uppercase py-1">Player</div>
-        {Array.from({length:maxG},(_,i) => (
-          <div key={i} className="text-[10px] text-center font-mono text-muted-foreground py-1 font-bold">G{i+1}</div>
-        ))}
+      <div className="overflow-x-auto">
+        <div className="grid gap-1" style={{gridTemplateColumns:`minmax(80px,1fr) repeat(${maxG},44px)`, minWidth: 'fit-content'}}>
+          <div className="text-[10px] font-bold text-muted-foreground uppercase py-1">Player</div>
+          {Array.from({length:maxG},(_,i) => (
+            <div key={i} className="text-[10px] text-center font-mono text-muted-foreground py-1 font-bold">G{i+1}</div>
+          ))}
         {/* P1 */}
         <div className="text-xs font-semibold py-1 truncate self-center">{player1Name}</div>
         {Array.from({length:maxG},(_,i) => {
@@ -580,6 +581,7 @@ function InlineMatchScorer({ matchId, player1Name, player2Name, onSaved }: {
               bWon&&stored          ? 'border-emerald-400/50 bg-emerald-50/60 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300' :
                                       'border-border bg-background')} />
         })}
+      </div>
       </div>
 
       {/* Per-game errors — always current, no state lag */}

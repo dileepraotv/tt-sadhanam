@@ -260,10 +260,10 @@ export function RubberScorer({
       </div>
 
       {/* Score grid */}
-      <div className="p-3">
+      <div className="p-3 overflow-x-auto">
         <div
           className="grid gap-1"
-          style={{ gridTemplateColumns: `minmax(80px,1fr) repeat(${maxGames}, 44px)` }}
+          style={{ gridTemplateColumns: `minmax(60px,1fr) repeat(${maxGames}, 40px)`, minWidth: 'fit-content' }}
         >
           {/* Header row */}
           <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide py-1">Player</div>
