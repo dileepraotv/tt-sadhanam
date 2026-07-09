@@ -4,10 +4,12 @@ import { NextResponse } from 'next/server'
 export const runtime = 'edge'
 
 export async function GET(request: Request) {
-  // Verify the request is from Vercel Cron (in production)
-  if (process.env.NODE_ENV === 'production') {
+  // Protect in production: only allow Vercel Cron (which sends CRON_SECRET)
+  // Skip check if CRON_SECRET is not configured (e.g. during initial setup)
+  const cronSecret = process.env.CRON_SECRET
+  if (cronSecret) {
     const authHeader = request.headers.get('authorization')
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    if (authHeader !== `Bearer ${cronSecret}`) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
   }
