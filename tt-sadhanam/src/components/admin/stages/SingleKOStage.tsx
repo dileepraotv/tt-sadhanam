@@ -43,6 +43,11 @@ export function SingleKOStage({ tournament, players, matches, matchBase, rrStage
   const doneCount    = matches.filter(m => m.status === 'complete').length
   const realMatches  = matches.filter(m => m.status !== 'bye')
 
+  // For RR+KO: show unique players in the KO bracket, not total tournament players
+  const bracketPlayerCount = isRRFormat && isGenerated
+    ? new Set(realMatches.flatMap(m => [m.player1_id, m.player2_id]).filter(Boolean)).size
+    : players.length
+
   const handleFirstGenerate = () => {
     setLoading(true)
     startTransition(async () => {
@@ -51,15 +56,17 @@ export function SingleKOStage({ tournament, players, matches, matchBase, rrStage
           // RR+KO: build bracket from qualifiers only, not all players
           const result = await generateKnockoutStage(tournament.id, rrStageId)
           if (result.error) throw new Error(result.error)
+          toast({
+            title:       '✅ Bracket generated!',
+            description: `${result.qualifierCount ?? '?'} qualifiers seeded into the knockout bracket.`,
+          })
         } else {
           await generateBracketAction(tournament.id)
+          toast({
+            title:       '✅ Bracket generated!',
+            description: `${players.length} players seeded into match slots.`,
+          })
         }
-        toast({
-          title:       '✅ Bracket generated!',
-          description: rrStageId
-            ? 'Knockout bracket generated from group stage qualifiers.'
-            : `${players.length} players seeded into ${realMatches.length} match slots.`,
-        })
       } catch (e: unknown) {
         toast({ title: 'Generation failed', description: (e as Error).message, variant: 'destructive' })
       } finally {
@@ -87,13 +94,17 @@ export function SingleKOStage({ tournament, players, matches, matchBase, rrStage
         if (rrStageId) {
           const result = await generateKnockoutStage(tournament.id, rrStageId, true)
           if (result.error) throw new Error(result.error)
+          toast({
+            title:       '✅ Bracket re-generated!',
+            description: `${result.qualifierCount ?? '?'} qualifiers reseeded.${deletedDesc ? ` Cleared: ${deletedDesc}.` : ''}`,
+          })
         } else {
           await generateBracketAction(tournament.id)
+          toast({
+            title:       '✅ Bracket re-generated!',
+            description: deletedDesc ? `Cleared: ${deletedDesc}.` : `${players.length} players redrawn.`,
+          })
         }
-        toast({
-          title:       '✅ Bracket re-generated!',
-          description: deletedDesc ? `Cleared: ${deletedDesc}.` : `${players.length} players redrawn.`,
-        })
       } catch (e: unknown) {
         toast({ title: 'Generation failed', description: (e as Error).message, variant: 'destructive' })
       } finally {
@@ -136,10 +147,14 @@ export function SingleKOStage({ tournament, players, matches, matchBase, rrStage
           <span className="text-2xl">🎯</span>
           <div className="flex-1">
             <p className="font-bold text-orange-700 dark:text-orange-400 text-sm">
-              Step 2 of 2 — {players.length} players ready · Generate the draw!
+              {isRRFormat
+                ? 'Group stage complete — generate the knockout draw from qualifiers!'
+                : `Step 2 of 2 — ${players.length} players ready · Generate the draw!`}
             </p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Click "Generate Bracket" below to seed players and set up the bracket.
+              {isRRFormat
+                ? 'Click "Generate Bracket" below to seed qualifiers into the knockout bracket.'
+                : 'Click "Generate Bracket" below to seed players and set up the bracket.'}
             </p>
           </div>
           <ArrowRight className="h-5 w-5 text-orange-500 shrink-0 animate-bounce-x" />
@@ -158,7 +173,7 @@ export function SingleKOStage({ tournament, players, matches, matchBase, rrStage
 
           {/* Status tiles */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <StatusTile label="Players"   value={players.length} />
+            <StatusTile label="Players"   value={bracketPlayerCount} />
             <StatusTile label="Matches"   value={realMatches.length} />
             <StatusTile label="Completed" value={doneCount}  highlight={doneCount > 0} />
             <StatusTile label="Live"      value={liveCount}  live={liveCount > 0} />

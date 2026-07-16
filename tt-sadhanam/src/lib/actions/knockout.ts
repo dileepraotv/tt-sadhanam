@@ -178,7 +178,7 @@ export async function generateKnockoutStage(
   tournamentId: string,
   rrStageId:    string,
   force = false,
-): Promise<{ error?: string }> {
+): Promise<{ error?: string; qualifierCount?: number }> {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
@@ -387,5 +387,5 @@ export async function generateKnockoutStage(
   }).eq('id', tournamentId)
 
   await revalidateTournamentPaths(supabase, tournamentId)
-  return {}
+  return { qualifierCount: qualifiers.length }
 }
