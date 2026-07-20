@@ -1,5 +1,5 @@
 /**
- * app/page.tsx — TT-SADHANAM Public Homepage (Refactored)
+ * app/page.tsx — SADHANAM Public Homepage (Refactored)
  *
  * Sports-platform layout:
  *  1. Compact hero header — title, subtitle, stats pills
@@ -308,7 +308,7 @@ export default async function HomePage() {
               <div className="flex items-center gap-2 mb-1">
                 <Trophy className="h-5 w-5 text-orange-500 shrink-0" />
                 <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
-                  TT-SADHANAM
+                  SADHANAM
                 </h1>
               </div>
               <p className="text-sm text-muted-foreground">
@@ -415,7 +415,7 @@ export default async function HomePage() {
           <div className="surface-card p-12 text-center space-y-4">
             <Trophy className="h-12 w-12 mx-auto text-orange-500/25" />
             <div>
-              <p className="font-display font-bold text-xl text-foreground">Welcome to TT-SADHANAM</p>
+              <p className="font-display font-bold text-xl text-foreground">Welcome to SADHANAM</p>
               <p className="text-muted-foreground text-sm max-w-xs mx-auto mt-1">
                 Championships and events will appear here once created and published.
               </p>
@@ -427,7 +427,7 @@ export default async function HomePage() {
       </main>
 
       <footer className="py-5 text-center text-xs text-muted-foreground/40 border-t border-border/30 mt-4">
-        TT-SADHANAM · Table Tennis Tournament Manager
+        SADHANAM · Multi-Sport Tournament Manager
       </footer>
     </div>
   )

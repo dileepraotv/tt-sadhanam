@@ -11,11 +11,11 @@ test.describe('Homepage & Navigation', () => {
   })
 
   test('should load homepage', async ({ page }) => {
-    await expect(page).toHaveTitle(/TT-SADHANAM|Tournament/)
+    await expect(page).toHaveTitle(/SADHANAM|Tournament/)
   })
 
   test('should display logo and header', async ({ page }) => {
-    const logo = page.locator('text=TT-SADHANAM')
+    const logo = page.locator('text=SADHANAM')
     await expect(logo).toBeVisible()
   })
 

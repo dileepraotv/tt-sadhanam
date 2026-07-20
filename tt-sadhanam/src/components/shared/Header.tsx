@@ -45,7 +45,7 @@ export function Header({
             className="font-bold tracking-wide text-base hidden sm:block"
             style={{ fontFamily: 'Calibri, Trebuchet MS, Arial, sans-serif' }}
           >
-            TT-<span className="text-orange-100">SADHANAM</span>
+            SADHANAM
           </span>
         </Link>
 

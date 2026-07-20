@@ -24,7 +24,7 @@ jest.mock('next/link', () => ({
 
 describe('Header Component', () => {
   it('should render the logo', () => {
-    render(<div data-testid="header-logo">TT-SADHANAM</div>)
+    render(<div data-testid="header-logo">SADHANAM</div>)
     expect(screen.getByTestId('header-logo')).toBeInTheDocument()
   })
 
